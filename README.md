@@ -1,84 +1,36 @@
 # Omarchy Theme Manager
 
-Manage themes and browse Wallhaven wallpapers from Omarchy's native full-screen
-picker. Both experiences live in the existing Theme Manager plugin, so Omarchy
-still has exactly one replacement for `omarchy.image-picker`.
+<p align="center">
+  <img src="assets/banner.gif" alt="Omarchy Theme Manager — themes, wallpapers, icons, and Wallhaven in the native picker" width="100%" />
+</p>
 
-![Omarchy Theme Manager — themes and wallpapers in one native picker](preview.webp)
+<p align="center">
+  Themes, sticky wallpapers/icons, and Wallhaven browsing inside Omarchy's native
+  full-screen picker — one replacement for <code>omarchy.image-picker</code>.
+</p>
 
-## What it adds
+## Features
 
-### Themes
-
-- Search a cached catalog with previews, authors, stars, notes, and an official
-  Omarchy listing badge.
-- Install through `omarchy theme install` after explicit confirmation.
-- Uninstall non-active themes from `~/.config/omarchy/themes` through
-  `omarchy theme remove`.
-- Block stock-theme collisions, installed repositories, and removal of the
-  active theme.
-- Deduplicate catalog entries by canonical GitHub repository URL.
-
-### Wallpapers
-
-- Remember the wallpaper and icon theme you choose per Omarchy theme in
-  `~/.config/omarchy/theme-manager-memory.json`, and restore them after theme
-  switches (including native `omarchy-theme-set`).
-- Open **Icons** (`Ctrl+I`) for a live-preview grid of installed icon themes;
-  selections stick per theme via `icons.theme` + `gsettings`.
-- Clear overrides with **Reset wallpaper** / **Icon defaults** for the active
-  theme without touching Wallhaven or wallpaper favorites.
-- Save local wallpapers as persistent favorites with `Ctrl+D`, filter the
-  carousel to favorites with `Ctrl+Shift+D`, and watch saved images rearrange
-  into a stable front section.
-- Glide between expanding previews with monotonic, no-overshoot motion and a
-  visible star on every saved wallpaper.
-- Let each settled wallpaper generate a private live palette that recolors the
-  picker atmosphere, selected border, saved state, and controls without
-  changing the active desktop theme during browsing.
-- Browse SFW Wallhaven results inside the regular background carousel.
-- Type to search by Wallhaven keywords.
-- Filter by category, sorting, direction, minimum resolution, and Wallhaven
-  palette color.
-- Continue browsing automatically near the end of loaded results, with an
-  explicit **Load more** fallback.
-- Download the selected full-resolution image and apply it through Omarchy's
-  existing background-selection round trip.
-
-The Wallhaven action is shown only for background-picker requests. Theme-picker
-requests keep the theme catalog and uninstall controls; other image-picker
-requests keep Omarchy's stock behavior.
-
-## Aether integration
-
-Wallhaven support deliberately uses Aether's implementation instead of shipping
-another network client:
-
-- `aether --wallhaven-thumbs` performs SFW searches and owns the thumbnail
-  cache.
-- `aether --wallhaven-download` downloads the selected original.
-- Search defaults match Aether: all categories, newest first, descending,
-  1920x1080 or larger, and two Wallhaven pages per request.
-- Queries, filters, and wallpaper ids are separate process arguments; remote
-  text is never evaluated by a shell.
-
-Color is Wallhaven's indexed palette metadata, not a brightness or
-dominant-color test. A light wallpaper can match **Black** when black appears in
-its Wallhaven palette. Random sorting is omitted because Aether does not expose
-Wallhaven's response seed across paginated requests.
+- **Sticky per-theme memory** — wallpaper and icon overrides persist in
+  `~/.config/omarchy/theme-manager-memory.json` and restore after theme switches
+  (including native `omarchy-theme-set`).
+- **Icons mode** — `Ctrl+I` opens a live-preview grid of installed icon themes;
+  the footer Icons chip shows three previews for the _highlighted_ theme
+  (sticky memory or package default).
+- **Themes ⇄ Wallpapers cross-nav** — jump with footer chips or `Ctrl+T` /
+  `Ctrl+W`; **Browse** stays on the right next to Icons.
+- **Theme catalog** — filters (listing / availability / sort / min stars),
+  fuzzy search, install/uninstall with confirmations, official Omarchy badge.
+- **Wallpaper picker** — favorites (`Ctrl+D`), live palette while browsing,
+  Actions hamburger (Save / All / Reset / Remove), Wallhaven via Aether.
+- **Wallhaven** — SFW search, filters, load-more; downloads install into the
+  theme backgrounds folder so they appear in the local carousel.
 
 ## Requirements
 
 - Omarchy 4.0 (Quattro)
-- Aether 4.19 or newer for the optional Wallhaven browser
-- `curl`, `git`, `jq`, and GNU core utilities from the standard Omarchy
-  install
-
-Theme browsing and the native picker continue to work if Aether is unavailable;
-only a Wallhaven request shows the actionable Aether error.
-
-The public SFW Wallhaven API does not require an API key. Theme Manager does not
-expose authenticated purity controls.
+- Aether 4.19+ for Wallhaven (optional; theme/wallpaper picker works without it)
+- `curl`, `git`, `jq`, and GNU core utilities from a standard Omarchy install
 
 ## Install
 
@@ -86,117 +38,94 @@ expose authenticated purity controls.
 omarchy plugin add https://github.com/mtolhuys/omarchy-theme-manager.git --enable
 ```
 
-Existing installations update in place:
+Update:
 
 ```bash
 omarchy plugin update io.github.mtolhuys.theme-manager
 ```
 
-The plugin intentionally declares
-`omarchy.clonedFrom: omarchy.image-picker`. Disabling or removing it restores
-Omarchy's built-in picker.
+The plugin declares `omarchy.clonedFrom: omarchy.image-picker`. Disabling or
+removing it restores Omarchy’s built-in picker.
 
 ## Use
 
 ### Theme picker
 
-Open the regular Omarchy theme switcher.
+Open the Omarchy theme switcher (`Super+Shift+Ctrl+Space`).
 
 - Footer: **Wallpapers** on the left; **Browse themes** + Icons on the right.
-- The Icons chip previews the highlighted theme’s icons (sticky memory or
-  package default), not only the currently applied set. Previews warm on
-  shell start / picker open so the chip is not plain **Icons** after restart.
-- Choose **Browse themes** or press `Ctrl+B` (bare `B` when search is inactive).
-- Jump to wallpapers with **Wallpapers** / `Ctrl+W`.
-- Type to search, use the arrow keys to navigate, and press `Enter` to install.
-- Select an installed theme and choose **Uninstall**, or press `Delete`.
-- Press `Escape` to clear a search, leave the catalog, or close the picker.
+- Type to search; arrows to navigate; `Enter` to install (with confirmation).
+- Uninstall non-active themes with **Uninstall** / `Delete`.
+- Catalog metadata caches for six hours — see [CATALOG.md](CATALOG.md).
 
-Omarchy clones and applies an installed theme after confirmation. Change away
-from the active theme before removing it.
+### Wallpaper picker
 
-Catalog metadata is cached for six hours. A previous valid cache remains usable
-when refresh fails. See [CATALOG.md](CATALOG.md) for source, trust, and
-deduplication details.
+Open the background switcher (`Super+Ctrl+Space`).
 
-### Background picker
+- Footer: Actions (☰) + **Themes** on the left; **Browse Wallhaven** + Icons on
+  the right.
+- Local favorites, live palette, Remove/Reset for user backgrounds.
+- Wallhaven: type to search, **Filters** / `Ctrl+F`, **Load more** / `Ctrl+N`.
 
-Open the regular background switcher with `Super+Ctrl+Space`.
+### Keyboard shortcuts
 
-- Footer: Actions menu + **Themes** on the left; **Browse Wallhaven** + Icons on
-  the right. Press `M` for Actions, `Ctrl+T` for Themes.
-- Choose **Browse Wallhaven** or press `B` / `Ctrl+B`.
-- Type to search; results refresh after a short pause.
-- Choose **Filters** or press `Ctrl+F`, stage the choices, then apply them in
-  one request.
-- Use Left/Right or Tab/Shift+Tab to move.
-- Continue right to load more automatically, or choose **Load more** / press
-  `Ctrl+N`.
-- Press `Enter` to download and apply the selection.
-- On local wallpapers, press `Ctrl+D` to save/remove a favorite and
-  `Ctrl+Shift+D` to toggle favorites-only mode.
-- Press `Ctrl+I` (or **Icons**) to browse icon themes; Enter applies and sticks.
-- Use **Reset wallpaper** / **Icon defaults** to drop overrides for the current theme.
-- Press `Escape` to clear the search, return to local wallpapers, or close.
+| Shortcut       | Action                                 |
+| -------------- | -------------------------------------- |
+| `Ctrl+T` / `T` | Themes (bare `T` when search inactive) |
+| `Ctrl+W` / `W` | Wallpapers / leave Wallhaven           |
+| `B` / `Ctrl+B` | Browse (themes catalog or Wallhaven)   |
+| `M`            | Actions menu (local wallpapers)        |
+| `Ctrl+I`       | Icons mode                             |
+| `Ctrl+F`       | Filters (catalog or Wallhaven)         |
+| `Ctrl+D`       | Toggle wallpaper favorite              |
+| `Ctrl+Shift+D` | Favorites-only filter                  |
+| `Ctrl+N`       | Load more Wallhaven results            |
+| `Delete`       | Uninstall theme (theme picker)         |
+| `Escape`       | Clear search / back / close            |
 
-Inside the filter sheet, use Up/Down between rows, Left/Right between choices,
-Space to toggle categories, `D` to reverse direction, `Enter` to apply,
-`Backspace` to reset, and `Escape` to cancel.
+Bare letter shortcuts stay off while filter typing is active.
 
-Downloaded files stay in Aether's wallpaper directory and remain available
-outside the plugin.
+## Aether / Wallhaven
+
+Wallhaven uses Aether instead of a second network client:
+
+- `aether --wallhaven-thumbs` / `aether --wallhaven-download`
+- Defaults match Aether: all categories, newest first, 1920x1080+, two pages
+- Color filters use Wallhaven palette metadata (not brightness heuristics)
+
+Theme browsing continues if Aether is missing; only Wallhaven requests surface
+the Aether error. No Wallhaven API key is required for public SFW search.
 
 ## Security and privacy
 
-Omarchy shell plugins run unsandboxed with the current user's permissions.
-Review plugin and theme sources before enabling them.
+Shell plugins run unsandboxed with the current user's permissions. Review
+sources before enabling.
 
-For themes, Theme Manager accepts only normalized GitHub repository URLs,
-treats catalog fields as bounded plain text, caps remote downloads, records, and
-QML output, and loads previews only from strict GitHub host/path allowlists. A
-catalog entry or official badge is discovery metadata, not a security
-endorsement.
+Themes: only normalized GitHub repository URLs; bounded catalog fields;
+previews from strict GitHub allowlists. A catalog badge is discovery metadata,
+not a security endorsement.
 
-For wallpapers, Theme Manager invokes only Aether and Omarchy's existing picker
-helpers. It kills oversized Aether output while it is streaming, caps parsed
-records and fields, enforces the requested SFW/category contract, validates
-wallpaper ids, accepts previews only from Aether's thumbnail cache, and accepts
-downloads only from Aether's wallpaper directory. Search terms are sent to
-Wallhaven by Aether.
+Wallpapers: only Aether and Omarchy picker helpers; capped streaming output;
+validated ids; previews from Aether's thumbnail cache; downloads from Aether's
+wallpaper directory.
 
-The plugin has no install hooks and never requests elevated privileges.
+No install hooks; no elevated privileges.
 
-## Development and verification
-
-Run the complete source check:
+## Development
 
 ```bash
 npm run quality
 ```
 
-All activation and UI acceptance testing belongs in the disposable Omarchy
-plugin lab, not on a daily desktop:
+Acceptance testing belongs in the disposable plugin lab:
 
 ```bash
 cd ~/Projects/omarchy/plugin-lab
 ./bin/lab plugin ~/Projects/plugins/omarchy-theme-manager/tests/lab/acceptance.sh
 ```
 
-The scenario installs the candidate through Omarchy's real plugin lifecycle,
-verifies the versioned runtime, exercises persistent favorites and live palette
-sampling, covers the theme catalog and contextual Wallhaven
-browse/search/filter/download path through real shortcuts, and proves disable,
-re-enable, and removal cleanup.
-
-To verify an exact public candidate, point the same scenario at the repository:
-
-```bash
-cd ~/Projects/omarchy/plugin-lab
-THEME_MANAGER_INSTALL_SOURCE=https://github.com/mtolhuys/omarchy-theme-manager.git \
-  ./bin/lab plugin ~/Projects/plugins/omarchy-theme-manager/tests/lab/acceptance.sh
-```
-
-Read [UPSTREAM.md](UPSTREAM.md) before rebasing the derived picker files.
+Read [UPSTREAM.md](UPSTREAM.md) before rebasing derived picker files.
+See [CHANGELOG.md](CHANGELOG.md) for 0.5.x notes.
 
 ## Remove
 
@@ -204,9 +133,10 @@ Read [UPSTREAM.md](UPSTREAM.md) before rebasing the derived picker files.
 omarchy plugin remove io.github.mtolhuys.theme-manager
 ```
 
-Removing the plugin restores the built-in picker. Installed themes and
-downloaded wallpapers are left intact. To remove its saved wallpaper favorites
-as well, delete `~/.config/omarchy/wallpaper-command-center.json`.
+Removing restores the built-in picker. Installed themes and downloaded
+wallpapers stay. Delete `~/.config/omarchy/wallpaper-command-center.json` to
+clear saved wallpaper favorites, and
+`~/.config/omarchy/theme-manager-memory.json` for sticky memory.
 
 ## Credits
 
