@@ -12,7 +12,7 @@ https://github.com/mtolhuys/omarchy-theme-manager
 
 ### Target commit
 
-521dd84a18e71a2a6dad36bc6baae424098a75e9
+e6981bf00e8a8cc452e35b1892b833bb48f0d90d
 
 ### Verification acknowledgment
 
