@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.3 - 2026-09-06
+
+- Restore the live **Icons** three-preview showcase chip (folder/app/mime) that
+  opens Icons mode (`Ctrl+I`). The SearchableDropdown broke icon selection.
+- Collapse crowded left footer chips (☆ Save / All / Reset wallpaper / Remove)
+  into a single **Actions** dropdown; keep Browse Wallhaven + Icons on the right.
+- Fix still-stale **Remove** tiles: clear the carousel model and force a
+  `list.sh` rescan of `imageDirs` after delete/reset so ghosts vanish immediately
+  without closing the picker (in-memory Repeater surgery was not enough).
+
+
 ## 0.5.2 - 2026-09-06
 
 - **Remove** now drops the tile from the live carousel immediately (array-backed
