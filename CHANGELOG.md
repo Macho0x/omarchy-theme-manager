@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.2 - 2026-09-06
+
+- **Remove** now drops the tile from the live carousel immediately (array-backed
+  Repeater, path/basename match, row-cache sync, neighbor reselect) so deleted
+  wallpapers no longer ghost until Escape/reopen.
+- **Reset wallpaper** deletes ALL user/external wallpapers under
+  `~/.config/omarchy/backgrounds/<theme>/`, clears wallpaper memory, applies a
+  usable stock background, and purges externals from the open carousel.
+- Replace the Icons footer chip/mode entry with a real **Icons SearchableDropdown**
+  (`Icons · <theme>` trigger, searchable popup, applies with the same persistence).
+- Skip empty/near-empty wallpaper files (<4KiB) in `list.sh` / install / reset so
+  solid-black brand tiles like vantablack `omarchy.webp` (712B) cannot reappear.
+
 ## 0.5.1 - 2026-09-06
 
 - Fix **Remove** and **Reset wallpaper**: dedicated `remove-wallpaper.sh` /

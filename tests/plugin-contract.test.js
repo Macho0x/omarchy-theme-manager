@@ -9,7 +9,7 @@ const read = (path) => readFile(join(process.cwd(), path), "utf8")
 test("keeps the published Theme Manager identity as the sole picker clone", async () => {
   const manifest = JSON.parse(await read("manifest.json"))
   assert.equal(manifest.id, "io.github.mtolhuys.theme-manager")
-  assert.equal(manifest.version, "0.5.1")
+  assert.equal(manifest.version, "0.5.2")
   assert.deepEqual(manifest.kinds, ["overlay"])
   assert.match(manifest.entryPoints.overlay, /^v[0-9]{4}\/ImagePicker\.qml$/)
   assert.equal(manifest.omarchy.clonedFrom, "omarchy.image-picker")
@@ -68,7 +68,8 @@ test("routes theme and wallpaper features by request context", async () => {
   assert.match(picker, /if \(wallhavenMode\).*wallhaven\.download/s)
 
   assert.match(picker, /ThemeMemoryModel/)
-  assert.match(picker, /root\.openIcons\(\)/)
+  assert.match(picker, /iconsDropdown\.open\(\)/)
+  assert.match(picker, /function openIcons\(\)/)
   assert.match(picker, /theme-manager-memory\.json/)
   assert.doesNotMatch(picker, /io\.github\.mtolhuys\.wallpaper-manager/)
 })
@@ -102,7 +103,7 @@ test("delegates SFW Wallhaven traffic exclusively to bounded Aether processes", 
   assert.doesNotMatch(sources.join("\n"), /\bcurl\b/)
 })
 
-test("ships theme-set memory hook and compact Icons footer control", async () => {
+test("ships theme-set memory hook and Icons searchable dropdown", async () => {
   const { access } = require("node:fs/promises")
   const { constants } = require("node:fs")
   const hook = "hooks/theme-set.d/50-theme-manager-memory"
@@ -118,10 +119,13 @@ test("ships theme-set memory hook and compact Icons footer control", async () =>
   assert.match(picker, /omarchy-theme-set\.lock/)
   assert.match(picker, /footerIconLabel/)
   assert.match(picker, /Wallpaper saved for/)
-  assert.match(picker, /id: iconsBrowseButton/)
+  assert.match(picker, /id: iconsDropdown/)
+  assert.match(picker, /SearchableDropdown/)
+  assert.match(picker, /iconThemeOptions/)
   assert.match(picker, /Icons · /)
-  assert.match(picker, /Icons · " \+ root\.footerIconLabel/)
+  assert.match(picker, /dropWallpaperFromCarousel/)
   assert.doesNotMatch(picker, /model: \[root\.footerIconFolder/)
+  assert.doesNotMatch(picker, /id: iconsBrowseButton/)
 })
 
 test("installs external wallpapers into theme backgrounds for the local picker", async () => {
@@ -143,6 +147,8 @@ test("installs external wallpapers into theme backgrounds for the local picker",
   assert.match(picker, /resetWallpaperDefaults/)
   assert.match(picker, /remove-wallpaper\.sh/)
   assert.match(picker, /reset-wallpaper\.sh/)
+  assert.match(picker, /dropWallpaperFromCarousel/)
+  assert.match(picker, /model: root\.imageArray/)
   assert.match(picker, /leftReserved/)
   assert.match(picker, /rightReserved/)
   assert.match(memoryModel, /isUserInstalledWallpaper/)
@@ -156,6 +162,10 @@ test("installs external wallpapers into theme backgrounds for the local picker",
   assert.match(resetter, /current\/theme\/backgrounds/)
   assert.match(resetter, /omarchy-theme-bg-set/)
   assert.match(resetter, /stock_dir=\$home\/\.local\/state\/omarchy\/current\/theme\/backgrounds/)
-  assert.doesNotMatch(resetter, /find -L \"\$home\/\.config\/omarchy\/backgrounds/)
+  assert.match(resetter, /theme_dir=\$home\/\.config\/omarchy\/backgrounds\/\$theme/)
+  assert.match(resetter, /-delete/)
+  assert.match(await read("list.sh"), /stat -c '%s'/)
+  assert.match(await read("list.sh"), /4096/)
+  assert.match(await read("install-wallpaper.sh"), /too small/)
 })
 

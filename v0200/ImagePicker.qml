@@ -17,7 +17,7 @@ import "WallpaperCommandModel.js" as WallpaperCommandModel
 Item {
   id: root
 
-  readonly property string buildIdentity: "0.5.1"
+  readonly property string buildIdentity: "0.5.2"
   // Injected by omarchy-shell; defaults to the session OMARCHY_PATH.
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property var manifest: null
@@ -87,6 +87,19 @@ Item {
     ? IconThemeModel.labelForIconTheme(currentIconTheme)
     : "Icons"
   readonly property bool footerIconHasPreviews: !!(footerIconFolder || footerIconApp || footerIconMime)
+  readonly property var iconThemeOptions: {
+    const themes = Array.isArray(iconsInventoryThemes) ? iconsInventoryThemes : []
+    const options = []
+    for (let i = 0; i < themes.length; i++) {
+      const name = String(themes[i] && themes[i].name || "").trim()
+      if (!name) continue
+      options.push({
+        value: name,
+        label: "Icons · " + IconThemeModel.labelForIconTheme(name)
+      })
+    }
+    return options
+  }
   readonly property bool wallpaperPickerActive: wallpaperPickerRequest
   readonly property bool localWallpaperMode: wallpaperPickerActive && !wallhavenMode && !catalogMode && !iconsMode
   readonly property bool iconsPickerActive: iconsMode
@@ -601,16 +614,40 @@ Item {
     restoringThemeMemory = false
 
     const stock = ThemeMemoryModel.safePath(stockPath)
+
+    // Drop every user-installed external from the live carousel / row cache.
+    if (themeName && localWallpaperMode) {
+      const kept = []
+      const keptPaths = {}
+      for (let index = 0; index < imageArray.length; index++) {
+        const item = imageArray[index]
+        if (!item || !item.filePath) continue
+        if (ThemeMemoryModel.isUserInstalledWallpaper(item.filePath, homeDir, themeName))
+          continue
+        kept.push(item)
+        keptPaths[item.filePath] = true
+      }
+      imageArray = kept
+      if (loadedImageRows) {
+        const lines = String(loadedImageRows).split("\n").filter(function(line) {
+          if (!line) return false
+          const filePath = line.split("\t")[0]
+          return !!keptPaths[filePath]
+        })
+        loadedImageRows = lines.join("\n")
+      }
+    }
+
     if (stock && localWallpaperMode) {
       let index = carouselHasWallpaper(stock)
       if (index < 0) {
         injectWallpaperIntoCarousel(stock)
         index = carouselHasWallpaper(stock)
       }
-      if (index >= 0) {
-        selectedIndex = index
+      if (index >= 0)
+        select(index, true)
+      if (index >= 0)
         selectedImage = imageArray[index].filePath
-      }
     }
 
     showStatus(themeName
@@ -640,6 +677,7 @@ Item {
     const removed = ThemeMemoryModel.safePath(wallpaperRemoveProc.removedPath)
     const themeName = ThemeMemoryModel.safeThemeName(wallpaperRemoveProc.themeName)
     const clearMemory = wallpaperRemoveProc.clearMemory === true
+    const previousIndex = selectedIndex
     wallpaperRemoveProc.removedPath = ""
     wallpaperRemoveProc.themeName = ""
     wallpaperRemoveProc.clearMemory = false
@@ -655,29 +693,56 @@ Item {
       saveWallpaperCommandState()
     }
 
-    if (removed) {
-      const nextImages = []
-      for (let index = 0; index < imageArray.length; index++) {
-        const item = imageArray[index]
-        if (!item || item.filePath === removed) continue
-        nextImages.push(item)
-      }
-      imageArray = nextImages
-      if (imageArray.length === 0) {
-        selectedIndex = 0
-        selectedImage = ""
-      } else {
-        const next = ThemeMemoryModel.safePath(nextBackground)
-        let index = next ? carouselHasWallpaper(next) : -1
-        if (index < 0) index = Math.min(selectedIndex, imageArray.length - 1)
-        if (index < 0) index = 0
-        selectedIndex = index
-        selectedImage = imageArray[index].filePath
-      }
-    }
-
+    dropWallpaperFromCarousel(removed, nextBackground, previousIndex)
     showStatus("Wallpaper removed")
     Qt.callLater(focusPicker)
+  }
+
+  function dropWallpaperFromCarousel(removedPath, nextBackground, previousIndex) {
+    const removed = ThemeMemoryModel.safePath(removedPath)
+    const removedBase = ThemeMemoryModel.imageBasename(removed)
+    if (!removed && !removedBase) return
+
+    const nextImages = []
+    for (let index = 0; index < imageArray.length; index++) {
+      const item = imageArray[index]
+      if (!item || !item.filePath) continue
+      if (item.filePath === removed) continue
+      if (removedBase && item.fileName === removedBase) continue
+      if (removedBase && String(item.filePath).split("/").pop() === removedBase) continue
+      nextImages.push(item)
+    }
+
+    // Keep row-cache in sync so Escape/reopen cannot revive the ghost tile.
+    if (loadedImageRows) {
+      const lines = String(loadedImageRows).split("\n").filter(function(line) {
+        if (!line) return false
+        const filePath = line.split("\t")[0]
+        if (!filePath) return false
+        if (removed && filePath === removed) return false
+        if (removedBase && filePath.split("/").pop() === removedBase) return false
+        return true
+      })
+      loadedImageRows = lines.join("\n")
+    }
+
+    // Replace model with a fresh array so Repeater delegates rebuild immediately.
+    imageArray = nextImages.slice()
+
+    if (imageArray.length === 0) {
+      selectedIndex = 0
+      selectedImage = ""
+      return
+    }
+
+    const preferred = ThemeMemoryModel.safePath(nextBackground)
+    let index = preferred ? carouselHasWallpaper(preferred) : -1
+    if (index < 0) {
+      const fallback = typeof previousIndex === "number" ? previousIndex : selectedIndex
+      index = Math.min(Math.max(0, fallback), imageArray.length - 1)
+    }
+    select(index, true)
+    selectedImage = imageArray[index].filePath
   }
 
   function resetIconDefaults() {
@@ -1769,6 +1834,14 @@ Item {
           return
         }
 
+        if (iconsDropdown.popupOpen) {
+          if (event.key === Qt.Key_Escape) {
+            iconsDropdown.close()
+            event.accepted = true
+          }
+          return
+        }
+
         if (themeCatalog.confirmationOpen) {
           if (installConfirm.handleKey(event)) event.accepted = true
         } else if (themeManager.confirmationOpen) {
@@ -1782,7 +1855,7 @@ Item {
         } else if (event.key === Qt.Key_I
             && (event.modifiers & Qt.ControlModifier) !== 0
             && root.canOpenIconsMode) {
-          root.openIcons()
+          iconsDropdown.open()
           event.accepted = true
         } else if (event.key === Qt.Key_B
             && (event.modifiers & Qt.ControlModifier) !== 0
@@ -1922,13 +1995,16 @@ Item {
         readonly property real previewX: (width - root.expandedWidth) / 2
 
         Repeater {
-          model: root.imageArray.length
+          // Bind the array itself so removals rebuild delegates (length-only
+          // models keep stale Image sources for recycled indices).
+          model: root.imageArray
 
           delegate: Item {
             id: item
             required property int index
+            required property var modelData
 
-            readonly property var imageData: root.imageArray[index]
+            readonly property var imageData: modelData
             readonly property string filePath: imageData ? imageData.filePath : ""
             readonly property string fileName: imageData ? imageData.fileName : ""
             readonly property string thumbnailPath: imageData ? imageData.thumbnailPath : ""
@@ -2022,7 +2098,7 @@ Item {
                   : ""
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: root.wallhavenMode || root.catalogMode
-                cache: true
+                cache: root.wallhavenMode || root.catalogMode
                 smooth: true
               }
 
@@ -2212,7 +2288,7 @@ Item {
           defaultsControls.implicitHeight,
           wallhavenBrowseButton.implicitHeight,
           wallhavenBackButton.implicitHeight,
-          iconsBrowseButton.implicitHeight,
+          iconsDropdown.implicitHeight,
           iconsBackButton.implicitHeight,
           loadMoreButton.implicitHeight,
           themeBrowseButton.implicitHeight,
@@ -2230,15 +2306,15 @@ Item {
         readonly property real rightReserved: {
           let width = 0
           if (wallhavenBrowseButton.visible) width += wallhavenBrowseButton.implicitWidth
-          if (iconsBrowseButton.visible) {
+          if (iconsDropdown.visible) {
             if (width > 0) width += Style.space(8)
-            width += iconsBrowseButton.implicitWidth
+            width += iconsDropdown.implicitWidth
           }
           if (uninstallButton.visible) {
             let cluster = uninstallButton.implicitWidth
             // Icons sit to the left of Uninstall in theme-picker mode.
-            if (iconsBrowseButton.visible && !wallhavenBrowseButton.visible)
-              cluster += Style.space(8) + iconsBrowseButton.implicitWidth
+            if (iconsDropdown.visible && !wallhavenBrowseButton.visible)
+              cluster += Style.space(8) + iconsDropdown.implicitWidth
             width = Math.max(width, cluster)
           }
           if (defaultsControls.visible)
@@ -2287,7 +2363,7 @@ Item {
             visible: !!root.currentThemeName
             enabled: root.canResetWallpaper && !wallpaperResetProc.running
             text: "Reset wallpaper"
-            tooltipText: "Clear remembered wallpaper and restore this theme's stock background"
+            tooltipText: "Delete all installed external wallpapers for this theme and restore stock defaults"
             foreground: root.canResetWallpaper ? root.foreground : Color.muted
             accent: root.livePaletteAccent
             bordered: true
@@ -2355,7 +2431,7 @@ Item {
           visible: root.wallpaperPickerActive && !root.wallhavenMode && !root.iconsMode
           anchors.verticalCenter: parent.verticalCenter
           x: selectedLabel.visible
-            ? parent.width - width - (iconsBrowseButton.visible ? iconsBrowseButton.width + Style.space(8) : 0)
+            ? parent.width - width - (iconsDropdown.visible ? iconsDropdown.width + Style.space(8) : 0)
             : (parent.width - width) / 2
           text: "Browse Wallhaven"
           tooltipText: "Browse SFW Wallhaven wallpapers through Aether (Ctrl+B)"
@@ -2367,25 +2443,32 @@ Item {
           onClicked: root.openWallhaven()
         }
 
-        Button {
-          id: iconsBrowseButton
+        SearchableDropdown {
+          id: iconsDropdown
+          // Keep id aliases used by footer width math.
+          // iconsBrowseButton historically reserved right-side space.
           visible: root.canOpenIconsMode
           anchors.verticalCenter: parent.verticalCenter
           anchors.right: uninstallButton.visible ? uninstallButton.left : parent.right
           anchors.rightMargin: uninstallButton.visible ? Style.space(8) : 0
-          text: root.footerIconLabel
-            ? ("Icons · " + root.footerIconLabel)
-            : "Icons"
-          tooltipText: root.footerIconLabel
-            ? ("Browse icon themes (Ctrl+I)\nCurrent: " + root.footerIconLabel)
-            : "Browse installed icon themes (Ctrl+I)"
+          width: Math.min(Style.spacing.searchableDropdownWidth, 260)
+          showLabel: false
+          triggerLabel: "Icons"
+          placeholderText: "Search icon themes..."
+          emptyText: "No icon themes"
+          options: root.iconThemeOptions
+          value: root.currentIconTheme
           foreground: root.foreground
           accent: root.livePaletteAccent
-          bordered: true
-          horizontalPadding: Style.space(12)
-          verticalPadding: Style.space(7)
-          onClicked: root.openIcons()
+          background: Util.alpha(root.dimColor, 0.94)
+          popupBorder: Util.alpha(root.foreground, 0.28)
+          onChanged: function(nextValue) {
+            root.applyIconTheme(String(nextValue || ""), true)
+            root.updateFooterIconPreviews()
+            Qt.callLater(root.focusPicker)
+          }
         }
+
 
         Button {
           id: iconsBackButton

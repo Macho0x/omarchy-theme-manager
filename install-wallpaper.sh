@@ -26,6 +26,14 @@ if [[ ! -f $src_raw ]]; then
 fi
 
 src=$(realpath -e "$src_raw")
+
+# Reject empty/near-empty sources so the picker never gains a black ghost tile.
+src_size=$(stat -c '%s' "$src" 2>/dev/null || echo 0)
+if [[ $src_size -lt 4096 ]]; then
+  echo "Wallpaper file too small (${src_size} bytes): $src" >&2
+  exit 1
+fi
+
 home=${HOME:-}
 
 if [[ -z $home || $home != /* ]]; then

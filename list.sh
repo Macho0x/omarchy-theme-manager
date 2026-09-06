@@ -39,6 +39,9 @@ while IFS= read -r dir; do
     \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.gif' -o -iname '*.bmp' -o -iname '*.webp' \) \
     -print0 2>/dev/null
 done <<<"$image_dirs" | sort -z | while IFS= read -r -d '' image; do
+  # Skip empty/near-empty files (e.g. vantablack stock omarchy.webp is ~712B solid black).
+  size=$(stat -c '%s' "$image" 2>/dev/null || echo 0)
+  [[ $size -ge 4096 ]] || continue
   thumbnail=$(thumbnail_for "$image")
   [[ -n $thumbnail ]] || continue
   printf '%s\t%s\n' "$image" "$thumbnail"
