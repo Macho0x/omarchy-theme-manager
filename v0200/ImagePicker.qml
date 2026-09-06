@@ -18,7 +18,7 @@ import "WallpaperCommandModel.js" as WallpaperCommandModel
 Item {
   id: root
 
-  readonly property string buildIdentity: "0.5.8"
+  readonly property string buildIdentity: "0.5.9"
   // Injected by omarchy-shell; defaults to the session OMARCHY_PATH.
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property var manifest: null
@@ -89,8 +89,24 @@ Item {
   property string footerIconFolder: ""
   property string footerIconApp: ""
   property string footerIconMime: ""
-  readonly property string footerIconLabel: currentIconTheme
-    ? IconThemeModel.labelForIconTheme(currentIconTheme)
+  // While browsing themes, preview the highlighted theme's icons (sticky memory
+  // first, then package icons.theme) instead of the globally applied icon theme.
+  readonly property string footerPreviewIconTheme: {
+    if (themeManager.themePickerActive
+        && !catalogMode
+        && !wallhavenMode
+        && !iconsMode
+        && !wallpaperPickerActive) {
+      const themeName = themeManager.selectedThemeName
+      const remembered = ThemeMemoryModel.rememberedIcons(themeMemoryState, themeName)
+      if (remembered) return remembered
+      const pkg = themeManager.packageIcons && themeManager.packageIcons[themeName]
+      if (pkg) return String(pkg)
+    }
+    return currentIconTheme
+  }
+  readonly property string footerIconLabel: footerPreviewIconTheme
+    ? IconThemeModel.labelForIconTheme(footerPreviewIconTheme)
     : "Icons"
   readonly property bool footerIconHasPreviews: !!(footerIconFolder || footerIconApp || footerIconMime)
   readonly property var wallpaperActionOptions: {
@@ -181,6 +197,7 @@ Item {
   }
 
   onCurrentIconThemeChanged: updateFooterIconPreviews()
+  onFooterPreviewIconThemeChanged: updateFooterIconPreviews()
 
   function runtimeIdentity() {
     return buildIdentity
@@ -546,7 +563,7 @@ Item {
   }
 
   function updateFooterIconPreviews() {
-    const selected = String(currentIconTheme || "").trim()
+    const selected = String(footerPreviewIconTheme || "").trim()
     let folder = ""
     let app = ""
     let mime = ""
@@ -1008,6 +1025,44 @@ Item {
         || !themeManager.inventoryReady
         || catalogMode) return
     themeCatalog.load()
+  }
+
+  function filterTypingActive() {
+    return wallhavenMode || iconsMode || catalogMode || filterable
+  }
+
+  function canUseLetterShortcut(event) {
+    if (!event) return false
+    if ((event.modifiers & Qt.ControlModifier) !== 0) return true
+    if (filterTypingActive()) return false
+    return event.modifiers === Qt.NoModifier || event.modifiers === Qt.ShiftModifier
+  }
+
+  // Cross-nav closes this picker request and opens the other Omarchy switcher.
+  function openWallpapersSwitcher() {
+    if (wallpaperPickerActive || iconsMode) return
+    if (!(themeManager.themePickerActive || catalogMode)) return
+    Quickshell.execDetached(["omarchy-theme-bg-switcher"])
+    cancel()
+  }
+
+  function openThemesSwitcher() {
+    if (themeManager.themePickerActive && !wallpaperPickerActive && !iconsMode) return
+    if (!(localWallpaperMode || wallhavenMode || iconsMode)) return
+    Quickshell.execDetached(["omarchy-theme-switcher"])
+    cancel()
+  }
+
+  function browseForCurrentMode() {
+    if (localWallpaperMode) {
+      openWallhaven()
+      return true
+    }
+    if (themeManager.themePickerActive && !catalogMode && !wallpaperPickerActive && !iconsMode) {
+      openCatalog()
+      return true
+    }
+    return false
   }
 
   function enterCatalog(rows) {
@@ -1973,20 +2028,35 @@ Item {
             && root.canOpenIconsMode) {
           root.openIcons()
           event.accepted = true
-        } else if (event.key === Qt.Key_B
-            && (event.modifiers & Qt.ControlModifier) !== 0
-            && root.wallpaperPickerActive
-            && !root.wallhavenMode
-            && !root.iconsMode) {
-          root.openWallhaven()
+        } else if (event.key === Qt.Key_T
+                   && root.canUseLetterShortcut(event)
+                   && (root.localWallpaperMode || root.wallhavenMode || root.iconsMode)) {
+          // Ctrl+T always; bare T only when filter typing is inactive.
+          if (root.iconsMode) root.leaveIcons(false)
+          if (root.wallhavenMode) root.leaveWallhaven(false)
+          root.openThemesSwitcher()
           event.accepted = true
+        } else if (event.key === Qt.Key_W
+                   && root.canUseLetterShortcut(event)) {
+          if (root.wallhavenMode) {
+            root.leaveWallhaven(true)
+            event.accepted = true
+          } else if (root.catalogMode) {
+            root.leaveCatalog(false)
+            root.openWallpapersSwitcher()
+            event.accepted = true
+          } else if (themeManager.themePickerActive && !root.wallpaperPickerActive && !root.iconsMode) {
+            root.openWallpapersSwitcher()
+            event.accepted = true
+          }
         } else if (event.key === Qt.Key_B
-                   && (event.modifiers & Qt.ControlModifier) !== 0
-                   && !root.catalogMode
-                   && !root.wallhavenMode
-                   && !root.iconsMode
-                   && themeManager.themePickerActive) {
-          root.openCatalog()
+                   && root.canUseLetterShortcut(event)
+                   && root.browseForCurrentMode()) {
+          event.accepted = true
+        } else if (event.key === Qt.Key_M
+                   && root.canUseLetterShortcut(event)
+                   && root.localWallpaperMode) {
+          wallpaperActionsDropdown.toggle()
           event.accepted = true
         } else if (event.key === Qt.Key_N
                    && (event.modifiers & Qt.ControlModifier) !== 0
@@ -2422,28 +2492,42 @@ Item {
           themeBrowseButton.implicitHeight,
           catalogBackButton.implicitHeight,
           uninstallButton.implicitHeight,
-          catalogInstallButton.implicitHeight
+          catalogInstallButton.implicitHeight,
+          wallpapersCrossNavButton.implicitHeight,
+          themesCrossNavButton.implicitHeight
         )
-        readonly property real leftReserved: Math.max(
-          wallpaperActionsDropdown.visible ? wallpaperActionsDropdown.implicitWidth : 0,
-          themeBrowseButton.visible ? themeBrowseButton.implicitWidth : 0,
-          catalogBackButton.visible ? catalogBackButton.implicitWidth : 0,
-          wallhavenBackButton.visible ? wallhavenBackButton.implicitWidth : 0,
-          iconsBackButton.visible ? iconsBackButton.implicitWidth : 0
-        )
+        readonly property real leftReserved: {
+          let width = 0
+          if (wallpaperActionsDropdown.visible) width += wallpaperActionsDropdown.implicitWidth
+          if (themesCrossNavButton.visible) {
+            if (width > 0) width += Style.space(8)
+            width += themesCrossNavButton.implicitWidth
+          }
+          if (wallpapersCrossNavButton.visible)
+            width = Math.max(width, wallpapersCrossNavButton.implicitWidth)
+          if (catalogBackButton.visible)
+            width = Math.max(width, catalogBackButton.implicitWidth)
+          if (wallhavenBackButton.visible)
+            width = Math.max(width, wallhavenBackButton.implicitWidth)
+          if (iconsBackButton.visible)
+            width = Math.max(width, iconsBackButton.implicitWidth)
+          return width
+        }
         readonly property real rightReserved: {
           let width = 0
-          if (wallhavenBrowseButton.visible) width += wallhavenBrowseButton.implicitWidth
+          // Browse* then Icons then Uninstall — right-aligned cluster.
+          if (themeBrowseButton.visible) width += themeBrowseButton.implicitWidth
+          if (wallhavenBrowseButton.visible) {
+            if (width > 0) width += Style.space(8)
+            width += wallhavenBrowseButton.implicitWidth
+          }
           if (iconsBrowseButton.visible) {
             if (width > 0) width += Style.space(8)
             width += iconsBrowseButton.implicitWidth
           }
           if (uninstallButton.visible) {
-            let cluster = uninstallButton.implicitWidth
-            // Icons sit to the left of Uninstall in theme-picker mode.
-            if (iconsBrowseButton.visible && !wallhavenBrowseButton.visible)
-              cluster += Style.space(8) + iconsBrowseButton.implicitWidth
-            width = Math.max(width, cluster)
+            if (width > 0) width += Style.space(8)
+            width += uninstallButton.implicitWidth
           }
           if (defaultsControls.visible)
             width = Math.max(width, defaultsControls.implicitWidth)
@@ -2542,7 +2626,7 @@ Item {
 
             PanelToolTip {
               visible: actionsTriggerHover.hovered && !actionsPopup.opened
-              text: "Actions"
+              text: "Actions (M)"
               delay: 500
             }
           }
@@ -2703,11 +2787,14 @@ Item {
           id: wallhavenBrowseButton
           visible: root.wallpaperPickerActive && !root.wallhavenMode && !root.iconsMode
           anchors.verticalCenter: parent.verticalCenter
-          x: selectedLabel.visible
-            ? parent.width - width - (iconsBrowseButton.visible ? iconsBrowseButton.width + Style.space(8) : 0)
-            : (parent.width - width) / 2
+          x: {
+            let offset = 0
+            if (iconsBrowseButton.visible) offset += iconsBrowseButton.width + Style.space(8)
+            if (uninstallButton.visible) offset += uninstallButton.width + Style.space(8)
+            return parent.width - width - offset
+          }
           text: "Browse Wallhaven"
-          tooltipText: "Browse SFW Wallhaven wallpapers through Aether (Ctrl+B)"
+          tooltipText: "Browse SFW Wallhaven wallpapers through Aether (B / Ctrl+B)"
           foreground: root.foreground
           accent: root.livePaletteAccent
           bordered: true
@@ -2784,7 +2871,7 @@ Item {
 
           PanelToolTip {
             visible: iconsBrowseMouse.containsMouse
-            text: root.footerIconLabel
+            text: (root.footerIconLabel || "Icons") + " (Ctrl+I)"
             delay: 400
           }
         }
@@ -2805,20 +2892,61 @@ Item {
         }
 
         Button {
+          id: wallpapersCrossNavButton
+          visible: !root.catalogMode
+            && !root.wallhavenMode
+            && !root.iconsMode
+            && !root.wallpaperPickerActive
+            && themeManager.themePickerActive
+          anchors.left: parent.left
+          anchors.verticalCenter: parent.verticalCenter
+          text: "Wallpapers"
+          tooltipText: "Open wallpaper picker (W / Ctrl+W)"
+          foreground: root.foreground
+          accent: Color.accent
+          bordered: true
+          horizontalPadding: Style.space(12)
+          verticalPadding: Style.space(7)
+          onClicked: root.openWallpapersSwitcher()
+        }
+
+        Button {
+          id: themesCrossNavButton
+          visible: root.localWallpaperMode
+          anchors.left: wallpaperActionsDropdown.visible ? wallpaperActionsDropdown.right : parent.left
+          anchors.leftMargin: wallpaperActionsDropdown.visible ? Style.space(8) : 0
+          anchors.verticalCenter: parent.verticalCenter
+          text: "Themes"
+          tooltipText: "Open theme picker (T / Ctrl+T)"
+          foreground: root.foreground
+          accent: root.livePaletteAccent
+          bordered: true
+          horizontalPadding: Style.space(12)
+          verticalPadding: Style.space(7)
+          onClicked: root.openThemesSwitcher()
+        }
+
+        Button {
           id: themeBrowseButton
           visible: !root.catalogMode
             && !root.wallhavenMode
             && !root.iconsMode
+            && !root.wallpaperPickerActive
             && themeManager.themePickerActive
           enabled: themeManager.inventoryReady
             && !themeCatalog.loading
             && !themeManager.busy
-          anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
+          x: {
+            let offset = 0
+            if (uninstallButton.visible) offset += uninstallButton.width + Style.space(8)
+            if (iconsBrowseButton.visible) offset += iconsBrowseButton.width + Style.space(8)
+            return parent.width - width - offset
+          }
           text: !themeManager.inventoryReady
             ? "Indexing…"
             : (themeCatalog.loading ? "Loading…" : "Browse themes")
-          tooltipText: "Browse community themes from verified catalog metadata (Ctrl+B)"
+          tooltipText: "Browse community themes from verified catalog metadata (B / Ctrl+B)"
           foreground: root.foreground
           accent: Color.accent
           bordered: true
@@ -2848,7 +2976,7 @@ Item {
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
           text: "Back"
-          tooltipText: "Return to local wallpapers (Escape)"
+          tooltipText: "Return to local wallpapers (Escape / W)"
           foreground: root.foreground
           accent: Color.accent
           bordered: true

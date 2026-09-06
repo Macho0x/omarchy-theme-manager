@@ -102,7 +102,11 @@ Omarchy's built-in picker.
 
 Open the regular Omarchy theme switcher.
 
-- Choose **Browse themes** or press `Ctrl+B`.
+- Footer: **Wallpapers** on the left; **Browse themes** + Icons on the right.
+- The Icons chip previews the highlighted theme’s icons (sticky memory or
+  package default), not only the currently applied set.
+- Choose **Browse themes** or press `Ctrl+B` (bare `B` when search is inactive).
+- Jump to wallpapers with **Wallpapers** / `Ctrl+W`.
 - Type to search, use the arrow keys to navigate, and press `Enter` to install.
 - Select an installed theme and choose **Uninstall**, or press `Delete`.
 - Press `Escape` to clear a search, leave the catalog, or close the picker.
@@ -118,7 +122,9 @@ deduplication details.
 
 Open the regular background switcher with `Super+Ctrl+Space`.
 
-- Choose **Browse Wallhaven** or press `Ctrl+B`.
+- Footer: Actions menu + **Themes** on the left; **Browse Wallhaven** + Icons on
+  the right. Press `M` for Actions, `Ctrl+T` for Themes.
+- Choose **Browse Wallhaven** or press `B` / `Ctrl+B`.
 - Type to search; results refresh after a short pause.
 - Choose **Filters** or press `Ctrl+F`, stage the choices, then apply them in
   one request.

@@ -9,7 +9,7 @@ const read = (path) => readFile(join(process.cwd(), path), "utf8")
 test("keeps the published Theme Manager identity as the sole picker clone", async () => {
   const manifest = JSON.parse(await read("manifest.json"))
   assert.equal(manifest.id, "io.github.mtolhuys.theme-manager")
-  assert.equal(manifest.version, "0.5.8")
+  assert.equal(manifest.version, "0.5.9")
   assert.deepEqual(manifest.kinds, ["overlay"])
   assert.match(manifest.entryPoints.overlay, /^v[0-9]{4}\/ImagePicker\.qml$/)
   assert.equal(manifest.omarchy.clonedFrom, "omarchy.image-picker")
@@ -137,6 +137,13 @@ test("ships theme-set memory hook, Icons showcase chip, and Actions dropdown", a
   assert.doesNotMatch(picker, /id: iconsDropdown/)
   assert.doesNotMatch(picker, /SearchableDropdown/)
   assert.doesNotMatch(picker, /iconThemeOptions/)
+  assert.match(picker, /footerPreviewIconTheme/)
+  assert.match(picker, /id: wallpapersCrossNavButton/)
+  assert.match(picker, /id: themesCrossNavButton/)
+  assert.match(picker, /function openWallpapersSwitcher/)
+  assert.match(picker, /function openThemesSwitcher/)
+  assert.match(picker, /function browseForCurrentMode/)
+  assert.match(picker, /packageIcons/)
 })
 
 test("installs external wallpapers into theme backgrounds for the local picker", async () => {

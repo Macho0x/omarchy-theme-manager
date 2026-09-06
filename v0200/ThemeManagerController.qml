@@ -13,6 +13,7 @@ Item {
   property var installedThemes: ({})
   property var stockThemes: ({})
   property var installedRepositories: []
+  property var packageIcons: ({})
   property bool inventoryReady: false
   property bool confirmationOpen: false
   property bool busy: false
@@ -120,6 +121,7 @@ Item {
         root.installedThemes = inventory.installedThemes
         root.stockThemes = inventory.stockThemes
         root.installedRepositories = inventory.installedRepositories
+        root.packageIcons = inventory.packageIcons || ({})
         root.inventoryReady = true
       }
     }
@@ -129,6 +131,7 @@ Item {
         root.installedThemes = ({})
         root.stockThemes = ({})
         root.installedRepositories = []
+        root.packageIcons = ({})
         root.inventoryReady = false
         root.errorMessage = "Could not read the installed theme inventory"
       }

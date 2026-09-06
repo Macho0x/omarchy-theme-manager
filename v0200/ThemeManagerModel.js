@@ -31,12 +31,19 @@ const themeMapFromText = (text) =>
       return themes
     }, {})
 
+const packageIconName = (value) => {
+  const icons = stringValue(value).trim()
+  if (!icons || icons.length > 255 || icons.startsWith(".") || /[\/\0]/.test(icons)) return ""
+  if (!/^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(icons)) return ""
+  return icons
+}
+
 const themeInventoryFromText = (text) =>
   stringValue(text)
     .split("\n")
     .reduce(
       (inventory, row) => {
-        const [kind, rawName, rawRepository = ""] = row.split("\t")
+        const [kind, rawName, rawRepository = "", rawIcons = ""] = row.split("\t")
         const name = stringValue(rawName).trim()
         if (!isSafeThemeName(name)) return inventory
 
@@ -48,9 +55,12 @@ const themeInventoryFromText = (text) =>
           inventory.stockThemes[name] = true
         }
 
+        const icons = packageIconName(rawIcons)
+        if (icons) inventory.packageIcons[name] = icons
+
         return inventory
       },
-      { installedThemes: {}, stockThemes: {}, installedRepositories: [] }
+      { installedThemes: {}, stockThemes: {}, installedRepositories: [], packageIcons: {} }
     )
 
 const hasTheme = (themes, name) => isSafeThemeName(name) && themeValues(themes)[name] === true
@@ -73,6 +83,7 @@ if (typeof module !== "undefined") {
     isThemePreviewPath,
     themeNameForPath,
     isSafeThemeName,
+    packageIconName,
     themeMapFromText,
     themeInventoryFromText,
     hasTheme,

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.9 - 2026-09-06
+
+- Footer layout: move **Browse themes** / **Browse Wallhaven** to the right,
+  beside the Icons showcase; add **Wallpapers** / **Themes** cross-nav on the
+  left (hamburger + Themes on local wallpapers).
+- Theme carousel Icons chip previews the **highlighted theme’s** icons (sticky
+  memory, else package `icons.theme`) instead of the globally applied set.
+- Shortcuts: `Ctrl+T` Themes, `Ctrl+W` Wallpapers (or leave Wallhaven),
+  `B`/`Ctrl+B` Browse for the current mode, `M` Actions menu on local
+  wallpapers; bare letter shortcuts stay off while filter typing is active.
+- Theme inventory now includes each package’s `icons.theme` for live previews.
+
 ## 0.5.8 - 2026-09-06
 
 - Fix Remove TypeError: `root.wallpaperRemoveProc` is undefined inside its own

@@ -20,7 +20,12 @@ emit_themes() {
       repository_url=$(git -C "$theme_path" config --get remote.origin.url 2>/dev/null || true)
     fi
 
-    printf '%s\t%s\t%s\n' "$kind" "$theme_name" "$repository_url"
+    icons=""
+    if [[ -f $theme_path/icons.theme ]]; then
+      icons=$(tr -d '\r\n' <"$theme_path/icons.theme")
+    fi
+
+    printf '%s\t%s\t%s\t%s\n' "$kind" "$theme_name" "$repository_url" "$icons"
   done < <(find "$directory" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null | sort -z)
 }
 

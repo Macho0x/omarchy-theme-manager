@@ -34,17 +34,23 @@ test("builds a de-duplicated inventory and ignores unsafe output", () => {
 test("parses user, stock, and Git-origin inventory rows", () => {
   const inventory = model.themeInventoryFromText(
     [
-      "user\tamberbyte\tgit@github.com:tahfizhabib/omarchy-amberbyte-theme.git",
-      "stock\tmiasma\t",
-      "user\t../outside\thttps://github.com/example/outside"
+      "user\tamberbyte\tgit@github.com:tahfizhabib/omarchy-amberbyte-theme.git\tYaru-dark",
+      "stock\tmiasma\t\tYaru-red",
+      "user\t../outside\thttps://github.com/example/outside\tEvil",
+      "stock\tretro-82\t\tYaru-wartybrown"
     ].join("\n")
   )
 
   assert.deepEqual(inventory.installedThemes, { amberbyte: true })
-  assert.deepEqual(inventory.stockThemes, { miasma: true })
+  assert.deepEqual(inventory.stockThemes, { miasma: true, "retro-82": true })
   assert.deepEqual(inventory.installedRepositories, [
     "git@github.com:tahfizhabib/omarchy-amberbyte-theme.git"
   ])
+  assert.deepEqual(inventory.packageIcons, {
+    amberbyte: "Yaru-dark",
+    miasma: "Yaru-red",
+    "retro-82": "Yaru-wartybrown"
+  })
 })
 
 test("removes an inventory entry without mutating the source object", () => {
