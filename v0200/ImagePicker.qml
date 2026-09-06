@@ -17,7 +17,7 @@ import "WallpaperCommandModel.js" as WallpaperCommandModel
 Item {
   id: root
 
-  readonly property string buildIdentity: "0.5.0"
+  readonly property string buildIdentity: "0.5.1"
   // Injected by omarchy-shell; defaults to the session OMARCHY_PATH.
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property var manifest: null
@@ -97,6 +97,7 @@ Item {
   readonly property bool canRemoveInstalledWallpaper: localWallpaperMode
     && !!ThemeMemoryModel.safeThemeName(currentThemeName)
     && ThemeMemoryModel.isUserInstalledWallpaper(currentPath(), homeDir, currentThemeName)
+  readonly property bool canResetWallpaper: localWallpaperMode && !!ThemeMemoryModel.safeThemeName(currentThemeName)
   readonly property bool currentFavorite: localWallpaperMode
     && WallpaperCommandModel.isFavorite(favoriteIds, currentPath(), wallpaperFavoriteContext())
   readonly property string wallhavenFilterSummary: WallpaperBrowserModel.filterSummary({
@@ -580,33 +581,49 @@ Item {
   }
 
   function resetWallpaperDefaults() {
-    const themeName = String(currentThemeName || "").trim()
-    if (!themeName) return
+    const themeName = ThemeMemoryModel.safeThemeName(currentThemeName)
+    const script = pluginScriptPath("reset-wallpaper.sh")
+    if (!themeName || !script) return
+    if (wallpaperResetProc.running) return
+
     themeMemoryState = ThemeMemoryModel.clearWallpaper(themeMemoryState, themeName)
     saveThemeMemoryState()
     restoringThemeMemory = true
-    memoryBgProc.command = [
-      "bash",
-      "-c",
-      'theme="$1"; link="$HOME/.local/state/omarchy/current/background"; '
-      + 'mapfile -d "" -t bgs < <(find -L "$HOME/.config/omarchy/backgrounds/$theme/" '
-      + '"$HOME/.local/state/omarchy/current/theme/backgrounds/" -maxdepth 1 -type f '
-      + '\( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.gif" '
-      + '-o -iname "*.bmp" -o -iname "*.webp" \) -print0 2>/dev/null | sort -z); '
-      + 'if ((${#bgs[@]}==0)); then echo "No theme background found" >&2; exit 1; fi; '
-      + 'omarchy-theme-bg-set "${bgs[0]}"',
-      "omarchy-theme-bg-default",
-      themeName
-    ]
-    memoryBgProc.running = true
-    showStatus("Wallpaper defaults restored")
+    wallpaperResetProc.themeName = themeName
+    wallpaperResetProc.succeeded = false
+    wallpaperResetProc.command = [script, themeName]
+    wallpaperResetProc.running = true
   }
 
+  function acceptResetWallpaper(stockPath) {
+    const themeName = ThemeMemoryModel.safeThemeName(wallpaperResetProc.themeName)
+    wallpaperResetProc.themeName = ""
+    restoringThemeMemory = false
+
+    const stock = ThemeMemoryModel.safePath(stockPath)
+    if (stock && localWallpaperMode) {
+      let index = carouselHasWallpaper(stock)
+      if (index < 0) {
+        injectWallpaperIntoCarousel(stock)
+        index = carouselHasWallpaper(stock)
+      }
+      if (index >= 0) {
+        selectedIndex = index
+        selectedImage = imageArray[index].filePath
+      }
+    }
+
+    showStatus(themeName
+      ? "Wallpaper defaults restored for " + themeName
+      : "Wallpaper defaults restored")
+    Qt.callLater(focusPicker)
+  }
 
   function removeCurrentInstalledWallpaper() {
     const themeName = ThemeMemoryModel.safeThemeName(currentThemeName)
     const target = ThemeMemoryModel.safePath(currentPath())
-    if (!themeName || !target) return
+    const script = pluginScriptPath("remove-wallpaper.sh")
+    if (!themeName || !target || !script) return
     if (!ThemeMemoryModel.isUserInstalledWallpaper(target, homeDir, themeName)) return
     if (wallpaperRemoveProc.running) return
 
@@ -614,26 +631,8 @@ Item {
     wallpaperRemoveProc.clearMemory = remembered === target
     wallpaperRemoveProc.removedPath = target
     wallpaperRemoveProc.themeName = themeName
-    wallpaperRemoveProc.command = [
-      "bash",
-      "-c",
-      'target="$1"; theme="$2"; '
-      + 'theme_dir="$HOME/.config/omarchy/backgrounds/$theme"; '
-      + 'case $target in "$theme_dir"/*) ;; *) echo "Refusing to delete non-user wallpaper" >&2; exit 1 ;; esac; '
-      + 'rm -f -- "$target"; '
-      + 'link=$(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null || true); '
-      + 'if [[ $link == "$target" || ! -e $link ]]; then '
-      + 'mapfile -d "" -t bgs < <(find -L "$theme_dir/" '
-      + '"$HOME/.local/state/omarchy/current/theme/backgrounds/" -maxdepth 1 -type f '
-      + '\( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.gif" '
-      + '-o -iname "*.bmp" -o -iname "*.webp" \) -print0 2>/dev/null | sort -z); '
-      + 'if ((${#bgs[@]})); then omarchy-theme-bg-set "${bgs[0]}"; printf "%s\n" "${bgs[0]}"; '
-      + 'else printf "\n"; fi; '
-      + 'else printf "%s\n" "$link"; fi',
-      "omarchy-theme-bg-remove",
-      target,
-      themeName
-    ]
+    wallpaperRemoveProc.succeeded = false
+    wallpaperRemoveProc.command = [script, themeName, target]
     wallpaperRemoveProc.running = true
   }
 
@@ -644,10 +643,16 @@ Item {
     wallpaperRemoveProc.removedPath = ""
     wallpaperRemoveProc.themeName = ""
     wallpaperRemoveProc.clearMemory = false
+    wallpaperRemoveProc.succeeded = false
 
     if (clearMemory && themeName) {
       themeMemoryState = ThemeMemoryModel.clearWallpaper(themeMemoryState, themeName)
       saveThemeMemoryState()
+    }
+
+    if (removed && WallpaperCommandModel.isFavorite(favoriteIds, removed, wallpaperFavoriteContext())) {
+      favoriteIds = WallpaperCommandModel.toggleFavorite(favoriteIds, removed, wallpaperFavoriteContext())
+      saveWallpaperCommandState()
     }
 
     if (removed) {
@@ -1612,21 +1617,43 @@ Item {
     property bool clearMemory: false
     property string removedPath: ""
     property string themeName: ""
-    property string stdoutText: ""
+    property bool succeeded: false
     stdout: StdioCollector {
       waitForEnd: true
-      onStreamFinished: root.wallpaperRemoveProc.stdoutText = String(text || "").trim()
+      onStreamFinished: {
+        root.wallpaperRemoveProc.succeeded = true
+        root.acceptRemovedInstalledWallpaper(String(text || "").trim())
+      }
     }
     onExited: function(exitCode) {
-      if (exitCode === 0) {
-        root.acceptRemovedInstalledWallpaper(root.wallpaperRemoveProc.stdoutText)
-        return
-      }
+      if (exitCode === 0) return
+      if (root.wallpaperRemoveProc.succeeded) return
       root.wallpaperRemoveProc.removedPath = ""
       root.wallpaperRemoveProc.themeName = ""
       root.wallpaperRemoveProc.clearMemory = false
-      root.wallpaperRemoveProc.stdoutText = ""
+      root.wallpaperRemoveProc.succeeded = false
       root.showStatus("Wallpaper remove failed")
+    }
+  }
+
+  Process {
+    id: wallpaperResetProc
+    property string themeName: ""
+    property bool succeeded: false
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        root.wallpaperResetProc.succeeded = true
+        root.acceptResetWallpaper(String(text || "").trim())
+      }
+    }
+    onExited: function(exitCode) {
+      root.restoringThemeMemory = false
+      if (exitCode === 0) return
+      if (root.wallpaperResetProc.succeeded) return
+      root.wallpaperResetProc.themeName = ""
+      root.wallpaperResetProc.succeeded = false
+      root.showStatus("Wallpaper reset failed")
     }
   }
 
@@ -2258,12 +2285,10 @@ Item {
           Button {
             anchors.verticalCenter: parent.verticalCenter
             visible: !!root.currentThemeName
-            enabled: root.hasWallpaperMemory
+            enabled: root.canResetWallpaper && !wallpaperResetProc.running
             text: "Reset wallpaper"
-            tooltipText: root.hasWallpaperMemory
-              ? "Clear remembered wallpaper and restore this theme's default background"
-              : "No remembered wallpaper override for this theme"
-            foreground: root.hasWallpaperMemory ? root.foreground : Color.muted
+            tooltipText: "Clear remembered wallpaper and restore this theme's stock background"
+            foreground: root.canResetWallpaper ? root.foreground : Color.muted
             accent: root.livePaletteAccent
             bordered: true
             horizontalPadding: Style.space(10)
@@ -2342,68 +2367,24 @@ Item {
           onClicked: root.openWallhaven()
         }
 
-        Rectangle {
+        Button {
           id: iconsBrowseButton
           visible: root.canOpenIconsMode
           anchors.verticalCenter: parent.verticalCenter
           anchors.right: uninstallButton.visible ? uninstallButton.left : parent.right
           anchors.rightMargin: uninstallButton.visible ? Style.space(8) : 0
-          implicitWidth: iconsBrowseContent.implicitWidth + Style.space(18)
-          implicitHeight: Math.max(Style.space(34), iconsBrowseContent.implicitHeight + Style.space(12))
-          radius: Style.cornerRadius > 0 ? Style.cornerRadius : Style.space(8)
-          color: Util.alpha(root.livePaletteBase, iconsBrowseMouse.containsMouse ? 0.72 : 0.86)
-          border.width: 1
-          border.color: iconsBrowseMouse.containsMouse
-            ? Util.alpha(root.livePaletteAccent, 0.9)
-            : Util.alpha(root.foreground, 0.38)
-
-          Row {
-            id: iconsBrowseContent
-            anchors.centerIn: parent
-            spacing: Style.space(8)
-
-            Row {
-              visible: root.footerIconHasPreviews
-              anchors.verticalCenter: parent.verticalCenter
-              spacing: Style.space(4)
-
-              Repeater {
-                model: [root.footerIconFolder, root.footerIconApp, root.footerIconMime].filter(function(path) {
-                  return !!path
-                })
-
-                Image {
-                  required property var modelData
-                  width: Style.space(18)
-                  height: width
-                  source: modelData ? Util.fileUrl(modelData) : ""
-                  fillMode: Image.PreserveAspectFit
-                  asynchronous: true
-                  cache: true
-                  smooth: true
-                }
-              }
-            }
-
-            Text {
-              anchors.verticalCenter: parent.verticalCenter
-              text: root.footerIconLabel
-              color: root.foreground
-              font.pixelSize: Style.font.body
-              font.weight: Font.DemiBold
-              elide: Text.ElideRight
-              maximumLineCount: 1
-              textFormat: Text.PlainText
-            }
-          }
-
-          MouseArea {
-            id: iconsBrowseMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: root.openIcons()
-          }
+          text: root.footerIconLabel
+            ? ("Icons · " + root.footerIconLabel)
+            : "Icons"
+          tooltipText: root.footerIconLabel
+            ? ("Browse icon themes (Ctrl+I)\nCurrent: " + root.footerIconLabel)
+            : "Browse installed icon themes (Ctrl+I)"
+          foreground: root.foreground
+          accent: root.livePaletteAccent
+          bordered: true
+          horizontalPadding: Style.space(12)
+          verticalPadding: Style.space(7)
+          onClicked: root.openIcons()
         }
 
         Button {

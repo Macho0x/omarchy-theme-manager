@@ -9,7 +9,7 @@ const read = (path) => readFile(join(process.cwd(), path), "utf8")
 test("keeps the published Theme Manager identity as the sole picker clone", async () => {
   const manifest = JSON.parse(await read("manifest.json"))
   assert.equal(manifest.id, "io.github.mtolhuys.theme-manager")
-  assert.equal(manifest.version, "0.5.0")
+  assert.equal(manifest.version, "0.5.1")
   assert.deepEqual(manifest.kinds, ["overlay"])
   assert.match(manifest.entryPoints.overlay, /^v[0-9]{4}\/ImagePicker\.qml$/)
   assert.equal(manifest.omarchy.clonedFrom, "omarchy.image-picker")
@@ -102,7 +102,7 @@ test("delegates SFW Wallhaven traffic exclusively to bounded Aether processes", 
   assert.doesNotMatch(sources.join("\n"), /\bcurl\b/)
 })
 
-test("ships theme-set memory hook and Icons showcase chip", async () => {
+test("ships theme-set memory hook and compact Icons footer control", async () => {
   const { access } = require("node:fs/promises")
   const { constants } = require("node:fs")
   const hook = "hooks/theme-set.d/50-theme-manager-memory"
@@ -119,7 +119,9 @@ test("ships theme-set memory hook and Icons showcase chip", async () => {
   assert.match(picker, /footerIconLabel/)
   assert.match(picker, /Wallpaper saved for/)
   assert.match(picker, /id: iconsBrowseButton/)
-  assert.doesNotMatch(picker, /id: iconsBrowseButton[\s\S]*?text: "Icons"/)
+  assert.match(picker, /Icons · /)
+  assert.match(picker, /Icons · " \+ root\.footerIconLabel/)
+  assert.doesNotMatch(picker, /model: \[root\.footerIconFolder/)
 })
 
 test("installs external wallpapers into theme backgrounds for the local picker", async () => {
@@ -136,11 +138,24 @@ test("installs external wallpapers into theme backgrounds for the local picker",
   assert.match(picker, /ensureRememberedWallpaperInPicker/)
   assert.match(picker, /acceptInstalledWallpaper/)
   assert.match(picker, /canRemoveInstalledWallpaper/)
+  assert.match(picker, /canResetWallpaper/)
   assert.match(picker, /removeCurrentInstalledWallpaper/)
+  assert.match(picker, /resetWallpaperDefaults/)
+  assert.match(picker, /remove-wallpaper\.sh/)
+  assert.match(picker, /reset-wallpaper\.sh/)
   assert.match(picker, /leftReserved/)
   assert.match(picker, /rightReserved/)
   assert.match(memoryModel, /isUserInstalledWallpaper/)
   assert.match(installer, /\.config\/omarchy\/backgrounds/)
   assert.match(installer, /realpath -e/)
+
+  const remover = await read("remove-wallpaper.sh")
+  const resetter = await read("reset-wallpaper.sh")
+  assert.match(remover, /omarchy-theme-bg-set/)
+  assert.match(remover, /Refusing to delete non-user wallpaper/)
+  assert.match(resetter, /current\/theme\/backgrounds/)
+  assert.match(resetter, /omarchy-theme-bg-set/)
+  assert.match(resetter, /stock_dir=\$home\/\.local\/state\/omarchy\/current\/theme\/backgrounds/)
+  assert.doesNotMatch(resetter, /find -L \"\$home\/\.config\/omarchy\/backgrounds/)
 })
 

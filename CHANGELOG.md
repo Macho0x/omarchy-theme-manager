@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.1 - 2026-09-06
+
+- Fix **Remove** and **Reset wallpaper**: dedicated `remove-wallpaper.sh` /
+  `reset-wallpaper.sh` scripts (QML inline `find \(` was eaten by JS string
+  escaping and always failed). Reset now restores stock theme backgrounds only
+  and stays enabled without a memory override.
+- Replace the wide three-icon Icons footer chip with a compact
+  `Icons · <theme>` button matching Wallhaven/Save chip style.
+
 ## 0.5.0 - 2026-09-06
 
 - Add Wallhaven-style **theme catalog filters** (Listing / Availability / Sort / Min stars) with stage-then-apply sheet, Ctrl+F, summary bar, and optional persistence in `~/.config/omarchy/theme-catalog-filters.json`.
