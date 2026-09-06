@@ -4,8 +4,8 @@ Lab-shot Matte Black marketing frames from the disposable Omarchy Plugin Lab
 (`tests/lab/marketing-preview.sh`), then composed for README / marketplace.
 
 - `banner.png` — Pulse-style multi-panel hero collage (Themes · Wallpapers · Wallhaven)
-- `banner.gif` / `banner.webp` — short cinematic loop with caption pills
-  (Themes · Catalog · Wallpapers · Actions · Icons · Wallhaven · One picker)
+- `banner.gif` / `banner.webp` — short cinematic loop; quiet secondary captions only,
+  top-center (middots; no ALL-CAPS titles / no ACTIONS label)
 - `../preview.webp` — marketplace still (Matte Black themes carousel, bar cropped)
 - `theme-library.webp` — themes carousel with Wallpapers / Browse / Icons
 - `catalog-browse.webp` — community catalog
