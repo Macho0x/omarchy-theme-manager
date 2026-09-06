@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.7 - 2026-09-06
+
+- Fix live **Remove** tile drop: optimistic `dropWallpaperFromCarousel` while the
+  picker stays visible, then authoritative `list.sh` rescan (no more
+  `imagesLoaded=false` blank that deferred Repeater teardown).
+- Carousel Repeater now uses a length + epoch model with index-bound
+  `imageArray[index]` (JS-array object model left Behaviors/sourceActivated
+  ghosts until Escape/reopen). Hamburger Actions → Remove shares the same path.
+
 ## 0.5.6 - 2026-09-06
 
 - Fix empty black **Wallhaven Zp92gy**-style ghosts after Remove/reopen: remembered

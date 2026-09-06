@@ -18,7 +18,7 @@ import "WallpaperCommandModel.js" as WallpaperCommandModel
 Item {
   id: root
 
-  readonly property string buildIdentity: "0.5.6"
+  readonly property string buildIdentity: "0.5.7"
   // Injected by omarchy-shell; defaults to the session OMARCHY_PATH.
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property var manifest: null
@@ -725,10 +725,7 @@ Item {
       saveWallpaperCommandState()
     }
 
-    // Root cause of stale tiles: mutating/replacing the JS-array Repeater model
-    // did not destroy delegates in practice ( Behaviors + sourceActivated left
-    // ghosts until Escape/reopen, which re-runs list.sh ). Force an in-place
-    // disk rescan so the carousel matches list.sh immediately.
+    // Optimistic model drop (visible card) + authoritative list.sh rescan.
     const preferred = ThemeMemoryModel.safePath(nextBackground)
     reloadLocalWallpapersFromDisk(preferred, removed)
     showStatus("Wallpaper removed")
@@ -747,28 +744,30 @@ Item {
   function reloadLocalWallpapersFromDisk(preferredPath, removedPath) {
     const preferred = ThemeMemoryModel.safePath(preferredPath)
     const removed = ThemeMemoryModel.safePath(removedPath)
+    const previousIndex = selectedIndex
 
-    // Drop every live delegate immediately (empty model), invalidate row cache,
-    // then rebuild from list.sh over theme + stock backgrounds.
-    loadedImageRows = ""
-    imageArray = []
-    selectedIndex = 0
-    selectedImage = preferred || ""
-    imagesLoaded = false
+    // Live Remove must paint immediately — same class as Wallhaven/theme-row
+    // updates: mutate the open model while the card stays visible. Blanking via
+    // imagesLoaded=false + imageArray=[] deferred Repeater teardown and left the
+    // old tile on screen until Escape/reopen rebuilt delegates.
+    if (removed)
+      dropWallpaperFromCarousel(removed, preferred, previousIndex)
+    else if (preferred)
+      selectedImage = preferred
+
+    imagesLoaded = true
+    layoutSettled = true
 
     const dirs = localWallpaperScanDirs()
     if (dirs)
       imageDirs = dirs
 
+    // Authoritative rescan in the background; keep optimistic tiles until then.
     if (localWallpaperMode && String(dirs || "").trim()) {
+      loadedImageRows = ""
       refreshInPlace = true
       startImageScan(requestSerial, dirs)
-      return
     }
-
-    // Fallback when dirs are unavailable: optimistic filter still clears UI.
-    dropWallpaperFromCarousel(removed, preferred, 0)
-    imagesLoaded = true
   }
 
   function dropWallpaperFromCarousel(removedPath, nextBackground, previousIndex) {
@@ -799,8 +798,8 @@ Item {
       loadedImageRows = lines.join("\n")
     }
 
-    // Replace model with a fresh array so Repeater delegates rebuild immediately.
-    imageArray = nextImages.slice()
+    // Fresh array + epoch so length-model Repeater rebinds surviving indices.
+    replaceImageArray(nextImages)
 
     if (imageArray.length === 0) {
       selectedIndex = 0
@@ -1388,8 +1387,9 @@ Item {
 
     root.loadedImageRows = rows
     root.selectedIndex = root.indexForSelectedImage(newImages)
-    root.imageArray = newImages
+    root.replaceImageArray(newImages)
     root.imagesLoaded = true
+    root.layoutSettled = true
 
     if (localWallpaperMode)
       ensureRememberedWallpaperInPicker()
@@ -1458,6 +1458,14 @@ Item {
   }
 
   property var imageArray: []
+  // Bumped on every intentional model replace so index-bound delegates re-read
+  // root.imageArray[index] even when length stays the same.
+  property int imageModelEpoch: 0
+
+  function replaceImageArray(next) {
+    imageArray = Array.isArray(next) ? next.slice() : []
+    imageModelEpoch += 1
+  }
 
   function startImageScan(serial, dirs) {
     if (loadImagesProc.running) {
@@ -2085,16 +2093,22 @@ Item {
         readonly property real previewX: (width - root.expandedWidth) / 2
 
         Repeater {
-          // Bind the array itself so removals rebuild delegates (length-only
-          // models keep stale Image sources for recycled indices).
-          model: root.imageArray
+          // Length model (not the JS array object): removals destroy the last
+          // delegate immediately. Epoch is a dependency so surviving indices
+          // re-read root.imageArray[index] after replaceImageArray — the array
+          // object model left Behaviors/sourceActivated ghosts until reopen.
+          model: root.imageArray.length + (root.imageModelEpoch * 0)
 
           delegate: Item {
             id: item
             required property int index
-            required property var modelData
 
-            readonly property var imageData: modelData
+            // Depend on imageModelEpoch so surviving indices rebind after replace.
+            readonly property var imageData: root.imageModelEpoch >= 0
+              && index >= 0
+              && index < root.imageArray.length
+              ? root.imageArray[index]
+              : null
             readonly property string filePath: imageData ? imageData.filePath : ""
             readonly property string fileName: imageData ? imageData.fileName : ""
             readonly property string thumbnailPath: imageData ? imageData.thumbnailPath : ""
@@ -2106,6 +2120,12 @@ Item {
               && Math.abs(relativeIndex) <= (root.wallhavenMode || root.catalogMode || root.iconsMode ? 7 : 16)
             property bool sourceActivated: nearby
             onNearbyChanged: if (nearby) sourceActivated = true
+            onFilePathChanged: {
+              // Drop sticky activation when this index now points at a new file
+              // so Image.source rebinds instead of keeping a deleted pixmap.
+              sourceActivated = false
+              if (nearby) sourceActivated = true
+            }
 
             visible: nearby
             x: selected ? carousel.previewX : (relativeIndex < 0 ? carousel.previewX + relativeIndex * carousel.itemStep : carousel.previewX + root.expandedWidth + root.sliceSpacing + (relativeIndex - 1) * carousel.itemStep)
