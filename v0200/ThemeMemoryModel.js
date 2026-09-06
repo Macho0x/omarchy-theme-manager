@@ -81,7 +81,13 @@ const withThemeEntry = (state, themeName, updater) => {
   if (!name || typeof updater !== "function") return cloneState(state)
 
   const next = cloneState(state)
-  const current = next.themes[name] ? { ...next.themes[name] } : {}
+  const current = {}
+  if (next.themes[name]) {
+    const src = next.themes[name]
+    for (const key in src) {
+      if (Object.prototype.hasOwnProperty.call(src, key)) current[key] = src[key]
+    }
+  }
   const updated = updater(current)
   const normalized = normalizeThemeEntry(updated)
   if (normalized) next.themes[name] = normalized
