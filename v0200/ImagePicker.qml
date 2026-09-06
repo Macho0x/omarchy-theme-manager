@@ -1702,11 +1702,10 @@ Item {
           id: defaultsControls
           visible: (root.localWallpaperMode || root.iconsMode) && !!root.currentThemeName
           anchors.verticalCenter: parent.verticalCenter
-          anchors.left: root.iconsMode ? undefined : parent.left
-          anchors.right: root.iconsMode ? parent.right : undefined
-          anchors.leftMargin: favoriteControls.visible
-            ? favoriteControls.width + Style.space(8)
-            : 0
+          // Keep a single edge binding so QML does not retain a stale left/right anchor.
+          x: root.iconsMode
+            ? parent.width - width
+            : (favoriteControls.visible ? favoriteControls.width + Style.space(8) : 0)
           spacing: Style.space(8)
 
           Button {
