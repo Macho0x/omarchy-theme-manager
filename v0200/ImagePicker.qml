@@ -18,7 +18,7 @@ import "WallpaperCommandModel.js" as WallpaperCommandModel
 Item {
   id: root
 
-  readonly property string buildIdentity: "0.5.7"
+  readonly property string buildIdentity: "0.5.8"
   // Injected by omarchy-shell; defaults to the session OMARCHY_PATH.
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property var manifest: null
@@ -80,6 +80,10 @@ Item {
   property var themeMemoryState: ({ version: 1, themes: {} })
   property string lastRestoredThemeName: ""
   property bool restoringThemeMemory: false
+  // Captured outside Process StdioCollector — root.wallpaper*Proc is undefined
+  // inside those collectors and threw before accept could run (Remove TypeError).
+  property string wallpaperRemoveStdout: ""
+  property string wallpaperResetStdout: ""
   property string statusToast: ""
   property var iconsInventoryThemes: []
   property string footerIconFolder: ""
@@ -656,7 +660,7 @@ Item {
     saveThemeMemoryState()
     restoringThemeMemory = true
     wallpaperResetProc.themeName = themeName
-    wallpaperResetProc.succeeded = false
+    wallpaperResetStdout = ""
     wallpaperResetProc.command = [script, themeName]
     wallpaperResetProc.running = true
   }
@@ -696,7 +700,14 @@ Item {
       || (!!rememberedBase && rememberedBase === removedBase))
     wallpaperRemoveProc.removedPath = target
     wallpaperRemoveProc.themeName = themeName
-    wallpaperRemoveProc.succeeded = false
+    wallpaperRemoveStdout = ""
+
+    // Optimistic UI drop BEFORE Process starts. Script success still runs
+    // acceptRemovedInstalledWallpaper (prune memory/favorites + list.sh rescan).
+    // Nonzero exit restores the carousel from disk.
+    const previousIndex = selectedIndex
+    dropWallpaperFromCarousel(target, "", previousIndex)
+
     wallpaperRemoveProc.command = [script, themeName, target]
     wallpaperRemoveProc.running = true
   }
@@ -708,7 +719,7 @@ Item {
     wallpaperRemoveProc.removedPath = ""
     wallpaperRemoveProc.themeName = ""
     wallpaperRemoveProc.clearMemory = false
-    wallpaperRemoveProc.succeeded = false
+    wallpaperRemoveStdout = ""
 
     if (themeName) {
       const remembered = ThemeMemoryModel.rememberedWallpaper(themeMemoryState, themeName)
@@ -725,7 +736,8 @@ Item {
       saveWallpaperCommandState()
     }
 
-    // Optimistic model drop (visible card) + authoritative list.sh rescan.
+    // Tile already dropped optimistically before Process; re-apply preferred
+    // path from script stdout and run authoritative list.sh rescan.
     const preferred = ThemeMemoryModel.safePath(nextBackground)
     reloadLocalWallpapersFromDisk(preferred, removed)
     showStatus("Wallpaper removed")
@@ -1774,21 +1786,25 @@ Item {
     property bool clearMemory: false
     property string removedPath: ""
     property string themeName: ""
-    property bool succeeded: false
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        root.wallpaperRemoveProc.succeeded = true
-        root.acceptRemovedInstalledWallpaper(String(text || "").trim())
+        // Never touch the Process id via root here — it is undefined inside
+        // this StdioCollector and previously threw TypeError before accept.
+        root.wallpaperRemoveStdout = String(text || "").trim()
       }
     }
     onExited: function(exitCode) {
-      if (exitCode === 0) return
-      if (root.wallpaperRemoveProc.succeeded) return
-      root.wallpaperRemoveProc.removedPath = ""
-      root.wallpaperRemoveProc.themeName = ""
-      root.wallpaperRemoveProc.clearMemory = false
-      root.wallpaperRemoveProc.succeeded = false
+      if (exitCode === 0) {
+        root.acceptRemovedInstalledWallpaper(root.wallpaperRemoveStdout)
+        return
+      }
+      wallpaperRemoveProc.removedPath = ""
+      wallpaperRemoveProc.themeName = ""
+      wallpaperRemoveProc.clearMemory = false
+      root.wallpaperRemoveStdout = ""
+      // Restore carousel after optimistic drop when the script fails.
+      root.reloadLocalWallpapersFromDisk("", "")
       root.showStatus("Wallpaper remove failed")
     }
   }
@@ -1796,20 +1812,22 @@ Item {
   Process {
     id: wallpaperResetProc
     property string themeName: ""
-    property bool succeeded: false
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        root.wallpaperResetProc.succeeded = true
-        root.acceptResetWallpaper(String(text || "").trim())
+        // Mirror Remove: capture stdout only; accept runs from onExited.
+        root.wallpaperResetStdout = String(text || "").trim()
       }
     }
     onExited: function(exitCode) {
       root.restoringThemeMemory = false
-      if (exitCode === 0) return
-      if (root.wallpaperResetProc.succeeded) return
-      root.wallpaperResetProc.themeName = ""
-      root.wallpaperResetProc.succeeded = false
+      if (exitCode === 0) {
+        root.acceptResetWallpaper(root.wallpaperResetStdout)
+        root.wallpaperResetStdout = ""
+        return
+      }
+      wallpaperResetProc.themeName = ""
+      root.wallpaperResetStdout = ""
       root.showStatus("Wallpaper reset failed")
     }
   }

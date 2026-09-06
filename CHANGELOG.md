@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.8 - 2026-09-06
+
+- Fix Remove TypeError: `root.wallpaperRemoveProc` is undefined inside its own
+  `StdioCollector.onStreamFinished`, so `acceptRemovedInstalledWallpaper` never
+  ran after a successful delete. Capture stdout on a root string property and
+  drive accept from `onExited` when `exitCode === 0` (same pattern for Reset).
+- Drop the Remove tile **before** starting `remove-wallpaper.sh`; on nonzero
+  exit, restore the carousel via `reloadLocalWallpapersFromDisk`.
+
 ## 0.5.7 - 2026-09-06
 
 - Fix live **Remove** tile drop: optimistic `dropWallpaperFromCarousel` while the
