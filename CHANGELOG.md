@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.6 - 2026-09-06
+
+- Fix empty black **Wallhaven Zp92gy**-style ghosts after Remove/reopen: remembered
+  picker paths are only selected when `list.sh` actually found them. Missing or
+  <4KiB remembered files are pruned from theme memory instead of being injected
+  (blind inject recreated the deleted tile as a black preview).
+- Row-backed wallpaper opens leave `imageDirs` empty; Remove/Reset now rebuild
+  from derived theme+stock scan dirs via `list.sh` so the live carousel matches
+  disk immediately (no drop-only fallback that left Repeater ghosts).
+- Clear wallpaper memory on Remove when path/basename matches; treat verify
+  `MISSING` / failed ensure-install as stale memory to drop.
+
 ## 0.5.5 - 2026-09-06
 
 - Enlarge the wallpaper footer Actions hamburger (☰) slightly (`Style.font.icon`).

@@ -18,7 +18,7 @@ import "WallpaperCommandModel.js" as WallpaperCommandModel
 Item {
   id: root
 
-  readonly property string buildIdentity: "0.5.5"
+  readonly property string buildIdentity: "0.5.6"
   // Injected by omarchy-shell; defaults to the session OMARCHY_PATH.
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property var manifest: null
@@ -374,18 +374,60 @@ Item {
     return true
   }
 
+  function localWallpaperScanDirs() {
+    // omarchy-menu-images opens with precomputed imageRows and an empty imageDirs
+    // argument. Keep a real dir list so Remove/Reset can always re-run list.sh.
+    const themeName = ThemeMemoryModel.safeThemeName(currentThemeName)
+    const seen = {}
+    const dirs = []
+
+    function pushDir(value) {
+      const dir = String(value || "").replace(/\/+$/, "")
+      if (!dir || seen[dir]) return
+      seen[dir] = true
+      dirs.push(dir)
+    }
+
+    String(imageDirs || "").split("\n").forEach(pushDir)
+    pushDir(ThemeMemoryModel.themeBackgroundsDir(homeDir, themeName))
+    pushDir(ThemeMemoryModel.currentThemeBackgroundsDir(homeDir))
+    pushDir(themeBackgroundsRoot + (themeName ? "/" + themeName : ""))
+    pushDir(currentThemeRoot)
+    return dirs.join("\n")
+  }
+
+  function pruneRememberedWallpaper(themeName) {
+    const name = ThemeMemoryModel.safeThemeName(themeName)
+    if (!name) return
+    if (!ThemeMemoryModel.rememberedWallpaper(themeMemoryState, name)) return
+    themeMemoryState = ThemeMemoryModel.clearWallpaper(themeMemoryState, name)
+    saveThemeMemoryState()
+  }
+
   function ensureRememberedWallpaperInPicker() {
     if (!localWallpaperMode) return
     const themeName = ThemeMemoryModel.safeThemeName(currentThemeName)
     const remembered = ThemeMemoryModel.rememberedWallpaper(themeMemoryState, themeName)
     if (!themeName || !remembered) return
 
-    if (!ThemeMemoryModel.needsWallpaperInstall(remembered, homeDir, themeName)) {
-      injectWallpaperIntoCarousel(remembered)
+    // External/Aether path: copy into theme backgrounds when the source still exists.
+    if (ThemeMemoryModel.needsWallpaperInstall(remembered, homeDir, themeName)) {
+      beginWallpaperInstall("ensure", remembered, "", "", 0)
       return
     }
 
-    beginWallpaperInstall("ensure", remembered, "", "", 0)
+    // Picker path already under stock/theme backgrounds. list.sh is the source of
+    // truth — never inject a remembered path that the scan did not return (deleted
+    // or <4KiB). Blind inject was the root cause of live Remove "stale" tiles and
+    // the empty black "Wallhaven Zp92gy" ghost after reopen.
+    const existing = carouselHasWallpaper(remembered)
+    if (existing >= 0) {
+      selectedIndex = existing
+      selectedImage = imageArray[existing].filePath
+      return
+    }
+
+    pruneRememberedWallpaper(themeName)
   }
 
   function migrateRememberedWallpaperIfNeeded() {
@@ -569,8 +611,13 @@ Item {
     themeMemoryVerifyProc.command = [
       "bash",
       "-c",
-      'expected="$1"; current=$(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null || true); '
-      + 'if [[ -n $expected && $current != "$expected" ]]; then echo MISMATCH; else echo OK; fi',
+      'expected="$1"; '
+      + 'if [[ -z $expected ]]; then echo OK; exit 0; fi; '
+      + 'if [[ ! -f $expected ]]; then echo MISSING; exit 0; fi; '
+      + 'size=$(stat -c %s "$expected" 2>/dev/null || echo 0); '
+      + 'if [[ $size -lt 4096 ]]; then echo MISSING; exit 0; fi; '
+      + 'current=$(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null || true); '
+      + 'if [[ $current != "$expected" ]]; then echo MISMATCH; else echo OK; fi',
       "theme-memory-verify",
       expected
     ]
@@ -642,7 +689,11 @@ Item {
     if (wallpaperRemoveProc.running) return
 
     const remembered = ThemeMemoryModel.rememberedWallpaper(themeMemoryState, themeName)
-    wallpaperRemoveProc.clearMemory = remembered === target
+    const rememberedBase = ThemeMemoryModel.imageBasename(remembered)
+    const removedBase = ThemeMemoryModel.imageBasename(target)
+    wallpaperRemoveProc.clearMemory = !!remembered && (
+      remembered === target
+      || (!!rememberedBase && rememberedBase === removedBase))
     wallpaperRemoveProc.removedPath = target
     wallpaperRemoveProc.themeName = themeName
     wallpaperRemoveProc.succeeded = false
@@ -659,9 +710,14 @@ Item {
     wallpaperRemoveProc.clearMemory = false
     wallpaperRemoveProc.succeeded = false
 
-    if (clearMemory && themeName) {
-      themeMemoryState = ThemeMemoryModel.clearWallpaper(themeMemoryState, themeName)
-      saveThemeMemoryState()
+    if (themeName) {
+      const remembered = ThemeMemoryModel.rememberedWallpaper(themeMemoryState, themeName)
+      const rememberedBase = ThemeMemoryModel.imageBasename(remembered)
+      const removedBase = ThemeMemoryModel.imageBasename(removed)
+      if (clearMemory
+          || (remembered && remembered === removed)
+          || (rememberedBase && removedBase && rememberedBase === removedBase))
+        pruneRememberedWallpaper(themeName)
     }
 
     if (removed && WallpaperCommandModel.isFavorite(favoriteIds, removed, wallpaperFavoriteContext())) {
@@ -693,16 +749,20 @@ Item {
     const removed = ThemeMemoryModel.safePath(removedPath)
 
     // Drop every live delegate immediately (empty model), invalidate row cache,
-    // then rebuild from list.sh over imageDirs (stock + theme backgrounds).
+    // then rebuild from list.sh over theme + stock backgrounds.
     loadedImageRows = ""
     imageArray = []
     selectedIndex = 0
     selectedImage = preferred || ""
     imagesLoaded = false
 
-    if (localWallpaperMode && String(imageDirs || "").trim()) {
+    const dirs = localWallpaperScanDirs()
+    if (dirs)
+      imageDirs = dirs
+
+    if (localWallpaperMode && String(dirs || "").trim()) {
       refreshInPlace = true
-      startImageScan(requestSerial, imageDirs)
+      startImageScan(requestSerial, dirs)
       return
     }
 
@@ -1355,6 +1415,9 @@ Item {
       imageDirs,
       imageRows
     )
+    // Row-backed wallpaper opens leave imageDirs empty; keep scan dirs ready for Remove.
+    if (wallpaperPickerRequest)
+      imageDirs = localWallpaperScanDirs() || imageDirs
     selectedImage = nextSelectedImage
     selectionFile = nextSelectionFile
     doneFile = nextDoneFile
@@ -1642,7 +1705,10 @@ Item {
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
-        if (String(text || "").trim() === "MISMATCH")
+        const status = String(text || "").trim()
+        if (status === "MISSING")
+          root.pruneRememberedWallpaper(themeMemoryVerifyProc.themeName)
+        else if (status === "MISMATCH")
           root.restoreThemeMemory(themeMemoryVerifyProc.themeName)
       }
     }
@@ -1750,8 +1816,14 @@ Item {
       if (exitCode === 0) return
       const purpose = String(root.pendingInstallPurpose || "")
       root.clearPendingInstall()
-      if (purpose === "finish") root.cancel()
-      else if (purpose) root.showStatus("Wallpaper install failed")
+      if (purpose === "finish") {
+        root.cancel()
+        return
+      }
+      // ensure/migrate with a vanished Aether source must not keep stale memory.
+      if (purpose === "ensure" || purpose === "migrate" || purpose === "migrate-restore")
+        root.pruneRememberedWallpaper(root.currentThemeName)
+      if (purpose) root.showStatus("Wallpaper install failed")
     }
   }
 
