@@ -6,7 +6,19 @@ const model = require("../v0200/ImagePickerModel.js")
 const images = [
   { filePath: "/cache/amber-byte.png" },
   { filePath: "/cache/catppuccin_mocha.jpg" },
-  { filePath: "/cache/tokyo-night.png" }
+  { filePath: "/cache/tokyo-night.png" },
+  {
+    filePath: "https://github.com/example/omarchy-van-gogh-theme",
+    displayName: "Van Gogh",
+    searchText: "van gogh starry night art",
+    installSlug: "van-gogh"
+  },
+  {
+    filePath: "https://github.com/example/omarchy-aether-theme",
+    displayName: "Aether",
+    searchText: "aether soft glow",
+    installSlug: "aether"
+  }
 ]
 
 test("derives stable names and readable labels from image paths", () => {
@@ -57,6 +69,27 @@ test("filters catalog rows by display metadata", () => {
   assert.equal(model.itemMatches(catalog, 0, "harbor"), true)
   assert.equal(model.itemMatches(catalog, 0, "terminal"), true)
   assert.equal(model.itemMatches(catalog, 0, "amber"), false)
+})
+
+test("normalizes hyphens/underscores and matches unordered tokens", () => {
+  assert.equal(model.normalizeSearchText("Van-Gogh"), "van gogh")
+  assert.equal(model.compactSearchText("van-gogh"), "vangogh")
+  assert.equal(model.itemMatches(images, 3, "vangogh"), true)
+  assert.equal(model.itemMatches(images, 3, "gogh van"), true)
+  assert.equal(model.itemMatches(images, 3, "starry gogh"), true)
+  assert.equal(model.itemMatches(images, 3, "starry amber"), false)
+  assert.equal(model.itemMatches(images, 1, "catppuccin mocha"), true)
+  assert.equal(model.itemMatches(images, 1, "mocha catppuccin"), true)
+})
+
+test("supports light fuzzy token matching", () => {
+  assert.equal(model.isSubsequence("athr", "aether"), true)
+  assert.equal(model.levenshteinAtMost("aether", "aeter", 1), true)
+  assert.equal(model.levenshteinAtMost("aether", "xyz", 1), false)
+  assert.equal(model.itemMatches(images, 4, "athr"), true)
+  assert.equal(model.itemMatches(images, 4, "aeter"), true)
+  assert.equal(model.itemMatches(images, 4, "xyz"), false)
+  assert.equal(model.textMatches("Tokyo Night", ""), true)
 })
 
 test("calculates filtered carousel positions without mutating rows", () => {

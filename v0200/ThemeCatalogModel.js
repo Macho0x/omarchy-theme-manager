@@ -140,6 +140,146 @@ const catalogRows = (payload, inventory = {}) => {
     })
 }
 
+const listingOptions = [
+  { value: "all", label: "All" },
+  { value: "official", label: "Official" },
+  { value: "community", label: "Community" }
+]
+
+const availabilityOptions = [
+  { value: "all", label: "All" },
+  { value: "installable", label: "Installable" },
+  { value: "installed", label: "Installed" },
+  { value: "conflicts", label: "Conflicts" }
+]
+
+const sortOptions = [
+  { value: "best", label: "Best match" },
+  { value: "stars", label: "Stars" },
+  { value: "name", label: "Name A–Z" }
+]
+
+const minStarsOptions = [
+  { value: 0, label: "Any" },
+  { value: 10, label: "10+" },
+  { value: 50, label: "50+" },
+  { value: 100, label: "100+" }
+]
+
+const optionForValue = (options, value) =>
+  options.find((option) => String(option.value) === String(value))
+
+const defaultCatalogFilters = () => ({
+  listing: "all",
+  availability: "all",
+  sort: "best",
+  minStars: 0
+})
+
+const normalizeCatalogFilters = (filters) => {
+  const input = filters && typeof filters === "object" ? filters : {}
+  const listing = stringValue(input.listing)
+  const availability = stringValue(input.availability)
+  const sort = stringValue(input.sort)
+  const minStars = Number(input.minStars)
+
+  return {
+    listing: optionForValue(listingOptions, listing) ? listing : "all",
+    availability: optionForValue(availabilityOptions, availability) ? availability : "all",
+    sort: optionForValue(sortOptions, sort) ? sort : "best",
+    minStars: optionForValue(minStarsOptions, minStars) ? minStars : 0
+  }
+}
+
+const catalogFilterKey = (filters) => {
+  const normalized = normalizeCatalogFilters(filters)
+  return [normalized.listing, normalized.availability, normalized.sort, normalized.minStars].join("|")
+}
+
+const catalogFiltersActive = (filters) =>
+  catalogFilterKey(filters) !== catalogFilterKey(defaultCatalogFilters())
+
+const catalogFilterSummary = (filters) => {
+  const normalized = normalizeCatalogFilters(filters)
+  const parts = []
+
+  if (normalized.listing !== "all") {
+    parts.push(optionForValue(listingOptions, normalized.listing).label)
+  }
+  if (normalized.availability !== "all") {
+    parts.push(optionForValue(availabilityOptions, normalized.availability).label)
+  }
+  if (normalized.sort === "stars") parts.push("Stars ↓")
+  else if (normalized.sort === "name") parts.push("Name A–Z")
+  if (normalized.minStars > 0) {
+    parts.push(optionForValue(minStarsOptions, normalized.minStars).label)
+  }
+
+  return parts.length > 0 ? parts.join("  ·  ") : "All themes"
+}
+
+const itemMatchesCatalogFilters = (item, filters) => {
+  const row = objectValue(item)
+  const normalized = normalizeCatalogFilters(filters)
+
+  if (normalized.listing === "official" && !row.official) return false
+  if (normalized.listing === "community" && row.official) return false
+
+  if (normalized.availability === "installable" && !row.canInstall) return false
+  if (normalized.availability === "installed" && !row.installed) return false
+  if (normalized.availability === "conflicts" && !row.stockConflict) return false
+
+  const stars = Number(row.stars) || 0
+  if (stars < normalized.minStars) return false
+  return true
+}
+
+const compareCatalogRows = (left, right, sort) => {
+  const mode = stringValue(sort) || "best"
+  if (mode === "stars") {
+    const starDelta = (Number(right.stars) || 0) - (Number(left.stars) || 0)
+    if (starDelta !== 0) return starDelta
+    return stringValue(left.displayName).localeCompare(stringValue(right.displayName))
+  }
+  if (mode === "name") {
+    return stringValue(left.displayName).localeCompare(stringValue(right.displayName))
+  }
+  return 0
+}
+
+const applyCatalogFilters = (rows, filters) => {
+  const normalized = normalizeCatalogFilters(filters)
+  const matched = arrayValue(rows).filter((row) => itemMatchesCatalogFilters(row, normalized))
+  if (normalized.sort === "best") return matched.slice()
+
+  return matched
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      const ranked = compareCatalogRows(left.row, right.row, normalized.sort)
+      return ranked !== 0 ? ranked : left.index - right.index
+    })
+    .map((entry) => entry.row)
+}
+
+const cloneOptions = (options) =>
+  options.map((option) => ({ value: option.value, label: option.label }))
+
+const getListingOptions = () => cloneOptions(listingOptions)
+const getAvailabilityOptions = () => cloneOptions(availabilityOptions)
+const getCatalogSortOptions = () => cloneOptions(sortOptions)
+const getMinStarsOptions = () => cloneOptions(minStarsOptions)
+
+const serializeCatalogFilters = (filters) =>
+  JSON.stringify(normalizeCatalogFilters(filters), null, 2) + "\n"
+
+const parseCatalogFilters = (raw) => {
+  try {
+    return normalizeCatalogFilters(JSON.parse(stringValue(raw) || "{}"))
+  } catch (_error) {
+    return defaultCatalogFilters()
+  }
+}
+
 const installConfirmationMessage = (entry) => {
   const row = objectValue(entry)
   if (!row.canInstall) return ""
@@ -165,6 +305,19 @@ if (typeof module !== "undefined") {
     safePreviewUrl,
     parsedArray,
     catalogRows,
-    installConfirmationMessage
+    installConfirmationMessage,
+    defaultCatalogFilters,
+    normalizeCatalogFilters,
+    catalogFilterKey,
+    catalogFiltersActive,
+    catalogFilterSummary,
+    itemMatchesCatalogFilters,
+    applyCatalogFilters,
+    getListingOptions,
+    getAvailabilityOptions,
+    getCatalogSortOptions,
+    getMinStarsOptions,
+    serializeCatalogFilters,
+    parseCatalogFilters
   }
 }

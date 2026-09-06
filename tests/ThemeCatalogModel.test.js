@@ -159,3 +159,82 @@ test("sorts installable themes ahead of blocked catalog entries", () => {
   assert.equal(rows[0].installSlug, "fresh")
   assert.equal(rows[1].installSlug, "blocked")
 })
+
+test("filters and sorts theme catalog rows locally", () => {
+  const rows = [
+    {
+      displayName: "Zebra",
+      official: true,
+      installed: false,
+      stockConflict: false,
+      canInstall: true,
+      stars: 12
+    },
+    {
+      displayName: "Alpha",
+      official: false,
+      installed: true,
+      stockConflict: false,
+      canInstall: false,
+      stars: 80
+    },
+    {
+      displayName: "Conflict",
+      official: false,
+      installed: false,
+      stockConflict: true,
+      canInstall: false,
+      stars: 5
+    }
+  ]
+
+  assert.equal(model.itemMatchesCatalogFilters(rows[0], { listing: "official" }), true)
+  assert.equal(model.itemMatchesCatalogFilters(rows[1], { listing: "official" }), false)
+  assert.equal(model.itemMatchesCatalogFilters(rows[1], { availability: "installed" }), true)
+  assert.equal(model.itemMatchesCatalogFilters(rows[2], { availability: "conflicts" }), true)
+  assert.equal(model.itemMatchesCatalogFilters(rows[2], { minStars: 10 }), false)
+
+  const officialInstallable = model.applyCatalogFilters(rows, {
+    listing: "official",
+    availability: "installable",
+    sort: "best",
+    minStars: 0
+  })
+  assert.deepEqual(
+    officialInstallable.map((row) => row.displayName),
+    ["Zebra"]
+  )
+
+  const byStars = model.applyCatalogFilters(rows, { sort: "stars", minStars: 10 })
+  assert.deepEqual(
+    byStars.map((row) => row.displayName),
+    ["Alpha", "Zebra"]
+  )
+
+  const byName = model.applyCatalogFilters(rows, { sort: "name" })
+  assert.deepEqual(
+    byName.map((row) => row.displayName),
+    ["Alpha", "Conflict", "Zebra"]
+  )
+
+  assert.equal(
+    model.catalogFilterSummary({
+      listing: "official",
+      availability: "installable",
+      sort: "stars",
+      minStars: 10
+    }),
+    "Official  ·  Installable  ·  Stars ↓  ·  10+"
+  )
+  assert.equal(model.catalogFiltersActive({}), false)
+  assert.equal(model.catalogFiltersActive({ listing: "community" }), true)
+  assert.deepEqual(
+    model.parseCatalogFilters(model.serializeCatalogFilters({ listing: "community", minStars: 50 })),
+    {
+      listing: "community",
+      availability: "all",
+      sort: "best",
+      minStars: 50
+    }
+  )
+})

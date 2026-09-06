@@ -40,6 +40,8 @@ test("versions the complete QML and JavaScript runtime graph", async () => {
     "WallpaperPaletteModel.js",
     "WallhavenFilterBar.qml",
     "WallhavenFilterSheet.qml",
+    "ThemeCatalogFilterBar.qml",
+    "ThemeCatalogFilterSheet.qml",
     "ThemeMemoryModel.js",
     "IconThemeModel.js"
   ]) {
@@ -59,6 +61,8 @@ test("routes theme and wallpaper features by request context", async () => {
   assert.match(picker, /wallpaperPickerRequest = WallpaperBrowserModel\.isWallpaperPickerRequest/)
   assert.match(picker, /themeManager\.themePickerActive/)
   assert.match(picker, /root\.openCatalog\(\)/)
+  assert.match(picker, /root\.openCatalogFilters\(\)/)
+  assert.match(picker, /ThemeCatalogFilterBar/)
   assert.match(picker, /root\.openWallhaven\(\)/)
   assert.match(picker, /if \(catalogMode\).*themeCatalog\.requestInstall/s)
   assert.match(picker, /if \(wallhavenMode\).*wallhaven\.download/s)

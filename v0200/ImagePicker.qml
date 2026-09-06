@@ -10,6 +10,7 @@ import "ImagePickerModel.js" as ImagePickerModel
 import "IconThemeModel.js" as IconThemeModel
 import "ThemeManagerModel.js" as ThemeManagerModel
 import "ThemeMemoryModel.js" as ThemeMemoryModel
+import "ThemeCatalogModel.js" as ThemeCatalogModel
 import "WallpaperBrowserModel.js" as WallpaperBrowserModel
 import "WallpaperCommandModel.js" as WallpaperCommandModel
 
@@ -44,6 +45,9 @@ Item {
   property string catalogPreviousFilter: ""
   property bool catalogPreviousFilterable: false
   property bool catalogPreviousShowLabels: false
+  property var catalogSourceRows: []
+  property var catalogFilters: ({ listing: "all", availability: "all", sort: "best", minStars: 0 })
+  readonly property string catalogFiltersPath: Quickshell.env("HOME") + "/.config/omarchy/theme-catalog-filters.json"
   property bool wallhavenMode: false
   property var localImages: []
   property int localSelectedIndex: 0
@@ -109,6 +113,8 @@ Item {
     atLeast: wallhaven.atLeast,
     colors: wallhaven.colors
   }) !== WallpaperBrowserModel.filterKey({})
+  readonly property string catalogFilterSummary: ThemeCatalogModel.catalogFilterSummary(catalogFilters)
+  readonly property bool catalogFiltersActive: ThemeCatalogModel.catalogFiltersActive(catalogFilters)
   // Bound to the central [image-picker] section in shell.toml via Color.qml.
   // dimColor tints unselected slices and text outlines on top of the scrim.
   property color dimColor: Color.background
@@ -139,7 +145,7 @@ Item {
   property int sliceSpacing: -30
   property int skewOffset: 28
   property int bottomChromeHeight: wallhavenMode || catalogMode || iconsMode
-    ? 150
+    ? (catalogMode ? 170 : 150)
     : (wallpaperPickerActive
         ? 96
         : (showLabels ? (filterable ? 104 : 74) : (filterable ? 60 : 30)))
@@ -184,7 +190,7 @@ Item {
       currentIconTheme: currentIconTheme,
       images: imageArray.length,
       query: wallhavenMode ? filterText : "",
-      filtersOpen: filterSheet.opened,
+      filtersOpen: filterSheet.opened || catalogFilterSheet.opened,
       favoriteCount: favoriteIds.length,
       currentFavorite: currentFavorite,
       favoritesOnly: favoritesOnly,
@@ -711,6 +717,7 @@ Item {
 
     iconsMode = true
     filterSheet.opened = false
+    catalogFilterSheet.opened = false
     imageArray = []
     selectedIndex = 0
     filterText = ""
@@ -861,18 +868,22 @@ Item {
     }
 
     catalogMode = true
-    imageArray = rows
+    catalogSourceRows = rows
+    imageArray = ThemeCatalogModel.applyCatalogFilters(rows, catalogFilters)
     selectedIndex = 0
     filterText = ""
     filterable = true
     showLabels = true
+    if (imageArray.length === 0) selectedIndex = 0
     Qt.callLater(focusPicker)
   }
 
   function leaveCatalog(restoreFocus) {
     if (!catalogMode) return
 
+    catalogFilterSheet.opened = false
     catalogMode = false
+    catalogSourceRows = []
     imageArray = catalogPreviousImages
     selectedIndex = Math.min(catalogPreviousIndex, Math.max(0, imageArray.length - 1))
     filterText = catalogPreviousFilter
@@ -917,7 +928,12 @@ Item {
           item.filePath,
           wallpaperFavoriteContext())) return false
     }
-    return ImagePickerModel.itemMatches(imageArray, index, filterText)
+    if (!ImagePickerModel.itemMatches(imageArray, index, filterText)) return false
+    if (catalogMode) {
+      if (index < 0 || index >= imageArray.length) return false
+      return ThemeCatalogModel.itemMatchesCatalogFilters(imageArray[index], catalogFilters)
+    }
+    return true
   }
 
   function firstMatchingIndex() {
@@ -1017,6 +1033,50 @@ Item {
     else Qt.callLater(focusPicker)
   }
 
+  function currentCatalogFilters() {
+    return ThemeCatalogModel.normalizeCatalogFilters(catalogFilters)
+  }
+
+  function loadCatalogFiltersState(raw) {
+    catalogFilters = ThemeCatalogModel.parseCatalogFilters(raw)
+  }
+
+  function persistCatalogFilters() {
+    catalogFiltersFile.setText(ThemeCatalogModel.serializeCatalogFilters(catalogFilters))
+  }
+
+  function openCatalogFilters() {
+    if (!catalogMode) return
+    catalogFilterSheet.openWith(currentCatalogFilters())
+  }
+
+  function applyThemeCatalogFilters(filters) {
+    const normalized = ThemeCatalogModel.normalizeCatalogFilters(filters)
+    catalogFilters = normalized
+    persistCatalogFilters()
+
+    if (!catalogMode) {
+      Qt.callLater(focusPicker)
+      return
+    }
+
+    const selectedPath = currentPath()
+    imageArray = ThemeCatalogModel.applyCatalogFilters(catalogSourceRows, normalized)
+    if (imageArray.length === 0) {
+      selectedIndex = 0
+    } else {
+      const restored = ImagePickerModel.indexForSelectedImage(imageArray, selectedPath)
+      selectedIndex = selectedPath && imageArray[restored] && imageArray[restored].filePath === selectedPath
+        ? restored
+        : 0
+      if (!itemMatches(selectedIndex)) {
+        const first = firstMatchingIndex()
+        selectedIndex = first >= 0 ? first : 0
+      }
+    }
+    Qt.callLater(focusPicker)
+  }
+
   function openWallhaven() {
     if (catalogMode || iconsMode || !wallpaperPickerActive || wallhavenMode) return
 
@@ -1025,6 +1085,7 @@ Item {
     localFilterText = filterText
     wallhavenMode = true
     filterSheet.opened = false
+    catalogFilterSheet.opened = false
     imageArray = []
     selectedIndex = 0
     filterText = ""
@@ -1298,6 +1359,15 @@ Item {
       if (serial > 0 && serial === root.requestSerial)
         root.startImageScan(serial, dirs)
     }
+  }
+
+  FileView {
+    id: catalogFiltersFile
+    path: root.catalogFiltersPath
+    atomicWrites: true
+    printErrors: false
+    onLoaded: root.loadCatalogFiltersState(text())
+    onLoadFailed: root.loadCatalogFiltersState("")
   }
 
   FileView {
@@ -1662,6 +1732,11 @@ Item {
 
       Keys.priority: Keys.BeforeItem
       Keys.onPressed: function(event) {
+        if (catalogFilterSheet.opened) {
+          if (catalogFilterSheet.handleKey(event)) event.accepted = true
+          return
+        }
+
         if (filterSheet.opened) {
           if (filterSheet.handleKey(event)) event.accepted = true
           return
@@ -1706,6 +1781,11 @@ Item {
                    && (event.modifiers & Qt.ControlModifier) !== 0
                    && root.wallhavenMode) {
           root.openWallhavenFilters()
+          event.accepted = true
+        } else if (event.key === Qt.Key_F
+                   && (event.modifiers & Qt.ControlModifier) !== 0
+                   && root.catalogMode) {
+          root.openCatalogFilters()
           event.accepted = true
         } else if (event.key === Qt.Key_D
                    && (event.modifiers & Qt.ControlModifier) !== 0
@@ -2524,9 +2604,23 @@ Item {
         textFormat: Text.PlainText
       }
 
+      ThemeCatalogFilterBar {
+        id: catalogFiltersBar
+        visible: root.catalogMode
+        anchors.top: footer.bottom
+        anchors.topMargin: Style.space(8)
+        anchors.horizontalCenter: carousel.horizontalCenter
+        height: implicitHeight
+        summary: root.catalogFilterSummary
+        filtersActive: root.catalogFiltersActive
+        foreground: root.foreground
+        accent: Color.accent
+        onOpenRequested: root.openCatalogFilters()
+      }
+
       Column {
         id: themeStatusColumn
-        anchors.top: footer.bottom
+        anchors.top: root.catalogMode ? catalogFiltersBar.bottom : footer.bottom
         anchors.topMargin: Style.space(8)
         anchors.horizontalCenter: carousel.horizontalCenter
         width: root.expandedWidth
@@ -2689,6 +2783,18 @@ Item {
       accent: Color.accent
       onCanceled: Qt.callLater(root.focusPicker)
       onApplied: function(filters) { root.applyWallhavenFilters(filters) }
+    }
+
+    ThemeCatalogFilterSheet {
+      id: catalogFilterSheet
+
+      anchors.fill: parent
+      background: root.dimColor
+      foreground: root.foreground
+      scrim: Util.alpha(root.dimColor, 0.88)
+      accent: Color.accent
+      onCanceled: Qt.callLater(root.focusPicker)
+      onApplied: function(filters) { root.applyThemeCatalogFilters(filters) }
     }
   }
 }

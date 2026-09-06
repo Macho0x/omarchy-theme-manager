@@ -2,6 +2,8 @@
 
 ## 0.5.0 - 2026-09-06
 
+- Add Wallhaven-style **theme catalog filters** (Listing / Availability / Sort / Min stars) with stage-then-apply sheet, Ctrl+F, summary bar, and optional persistence in `~/.config/omarchy/theme-catalog-filters.json`.
+- Upgrade picker search to tokenized fuzzy matching (hyphen/underscore normalization, unordered tokens, compact forms like `vangogh` ↔ `van-gogh`, light subsequence/edit-distance).
 - Install Wallhaven/external wallpaper picks into `~/.config/omarchy/backgrounds/<theme>/` so they appear in the local wallpaper picker carousel.
 - Add a stylish **Remove** control for user-installed theme backgrounds (deletes the file, updates memory/carousel, and retargets the current background when needed).
 - Reserve independent left/right footer space so the selected wallpaper title no longer overlaps Save/Reset or Browse Wallhaven/Icons.
