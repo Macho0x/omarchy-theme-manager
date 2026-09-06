@@ -1,17 +1,21 @@
 # Showcase assets
 
-- `banner.gif` / `banner.webp` — looping product demo (~14s) of themes, Icons chip,
-  catalog, wallpapers, Actions, Icons mode, Wallhaven, and cross-nav. Live capture
-  via gpu-screen-recorder + grim/wtype; assembled with ffmpeg.
-- `../preview.webp` — marketplace still (themes carousel home).
-- `theme-library.webp` — themes carousel with Wallpapers / Browse / Icons.
-- `catalog-browse.webp` — community catalog with filters.
-- `wallpaper-picker.webp` — wallpaper picker with live palette.
-- `actions-menu.webp` — Actions hamburger open.
-- `icons-mode.webp` — Icons showcase (three previews).
-- `wallhaven-browse.webp` — Wallhaven via Aether.
-- `wallpaper-command-center.webp` — earlier favorites capture.
-- `safety-confirmation.webp` — install confirmation.
-- `showcase-background.webp` — older neutral background.
+Lab-shot Matte Black marketing frames from the disposable Omarchy Plugin Lab
+(`tests/lab/marketing-preview.sh`), then composed for README / marketplace.
 
-Screenshots use the real plugin UI. Distributed under the repository MIT license.
+- `banner.png` — Pulse-style multi-panel hero collage (Themes · Wallpapers · Wallhaven)
+- `banner.gif` / `banner.webp` — short cinematic loop with caption pills
+  (Themes · Catalog · Wallpapers · Actions · Icons · Wallhaven · One picker)
+- `../preview.webp` — marketplace still (Matte Black themes carousel, bar cropped)
+- `theme-library.webp` — themes carousel with Wallpapers / Browse / Icons
+- `catalog-browse.webp` — community catalog
+- `wallpaper-picker.webp` — wallpaper picker with live palette
+- `actions-menu.webp` — Actions hamburger open
+- `icons-mode.webp` — Icons showcase
+- `wallhaven-browse.webp` — Wallhaven via Aether
+- `wallpaper-command-center.webp` — earlier favorites capture
+- `safety-confirmation.webp` — install confirmation
+- `showcase-background.webp` — older neutral background
+
+Screenshots are product UI from the disposable guest under Matte Black — not the
+daily host desktop. Distributed under the repository MIT license.

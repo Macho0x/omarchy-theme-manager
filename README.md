@@ -1,7 +1,14 @@
 # Omarchy Theme Manager
 
 <p align="center">
-  <img src="assets/banner.gif" alt="Omarchy Theme Manager — themes, wallpapers, icons, and Wallhaven in the native picker" width="100%" />
+  <img src="assets/banner.png" alt="Omarchy Theme Manager — Themes, Wallpapers, and Wallhaven on Matte Black" width="100%" />
+</p>
+
+<p align="center">
+  <picture>
+    <source srcset="assets/banner.webp" type="image/webp" />
+    <img src="assets/banner.gif" alt="Omarchy Theme Manager walkthrough — Themes, Catalog, Wallpapers, Icons, Wallhaven" width="100%" />
+  </picture>
 </p>
 
 <p align="center">
@@ -122,6 +129,7 @@ Acceptance testing belongs in the disposable plugin lab:
 ```bash
 cd ~/Projects/omarchy/plugin-lab
 ./bin/lab plugin ~/Projects/plugins/omarchy-theme-manager/tests/lab/acceptance.sh
+./bin/lab plugin ~/Projects/plugins/omarchy-theme-manager/tests/lab/marketing-preview.sh
 ```
 
 Read [UPSTREAM.md](UPSTREAM.md) before rebasing derived picker files.
