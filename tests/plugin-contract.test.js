@@ -97,3 +97,24 @@ test("delegates SFW Wallhaven traffic exclusively to bounded Aether processes", 
   assert.doesNotMatch(sources.join("\n"), /wallhaven\.cc\/api/)
   assert.doesNotMatch(sources.join("\n"), /\bcurl\b/)
 })
+
+test("ships theme-set memory hook and Icons showcase chip", async () => {
+  const { access } = require("node:fs/promises")
+  const { constants } = require("node:fs")
+  const hook = "hooks/theme-set.d/50-theme-manager-memory"
+  await access(join(process.cwd(), hook), constants.X_OK)
+  const hookText = await read(hook)
+  assert.match(hookText, /theme-manager-memory\.json/)
+  assert.match(hookText, /omarchy-theme-bg-set/)
+  assert.match(hookText, /icons\.theme/)
+
+  const manifest = JSON.parse(await read("manifest.json"))
+  const picker = await read(manifest.entryPoints.overlay)
+  assert.match(picker, /ensureThemeSetMemoryHook/)
+  assert.match(picker, /omarchy-theme-set\.lock/)
+  assert.match(picker, /footerIconLabel/)
+  assert.match(picker, /Wallpaper saved for/)
+  assert.match(picker, /id: iconsBrowseButton/)
+  assert.doesNotMatch(picker, /id: iconsBrowseButton[\s\S]*?text: "Icons"/)
+})
+

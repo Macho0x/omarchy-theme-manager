@@ -69,6 +69,14 @@ Item {
   property string lastRestoredThemeName: ""
   property bool restoringThemeMemory: false
   property string statusToast: ""
+  property var iconsInventoryThemes: []
+  property string footerIconFolder: ""
+  property string footerIconApp: ""
+  property string footerIconMime: ""
+  readonly property string footerIconLabel: currentIconTheme
+    ? IconThemeModel.labelForIconTheme(currentIconTheme)
+    : "Icons"
+  readonly property bool footerIconHasPreviews: !!(footerIconFolder || footerIconApp || footerIconMime)
   readonly property bool wallpaperPickerActive: wallpaperPickerRequest
   readonly property bool localWallpaperMode: wallpaperPickerActive && !wallhavenMode && !catalogMode && !iconsMode
   readonly property bool iconsPickerActive: iconsMode
@@ -127,7 +135,13 @@ Item {
         ? 96
         : (showLabels ? (filterable ? 104 : 74) : (filterable ? 60 : 30)))
 
-  Component.onCompleted: console.info("Theme Manager runtime " + buildIdentity)
+  Component.onCompleted: {
+    console.info("Theme Manager runtime " + buildIdentity)
+    ensureThemeSetMemoryHook()
+    ensureFooterIconsInventory()
+  }
+
+  onCurrentIconThemeChanged: updateFooterIconPreviews()
 
   function runtimeIdentity() {
     return buildIdentity
@@ -255,6 +269,7 @@ Item {
     if (!themeName || !target) return
     themeMemoryState = ThemeMemoryModel.setWallpaper(themeMemoryState, themeName, target)
     saveThemeMemoryState()
+    showStatus("Wallpaper saved for " + themeName)
   }
 
   function rememberIconSelection(iconName, iconsDefault) {
@@ -269,12 +284,63 @@ Item {
     saveThemeMemoryState()
   }
 
+  function ensureThemeSetMemoryHook() {
+    const source = pluginScriptPath("hooks/theme-set.d/50-theme-manager-memory")
+    if (!source) return
+    const dest = Quickshell.env("HOME") + "/.config/omarchy/hooks/theme-set.d/50-theme-manager-memory"
+    hookInstallProc.command = [
+      "bash",
+      "-c",
+      'src="$1"; dest="$2"; '
+      + 'mkdir -p "$(dirname "$dest")"; '
+      + 'if [[ ! -f $dest ]] || ! cmp -s "$src" "$dest"; then '
+      + 'cp "$src" "$dest" && chmod +x "$dest"; fi',
+      "theme-manager-ensure-hook",
+      source,
+      dest
+    ]
+    hookInstallProc.running = true
+  }
+
+  function ensureFooterIconsInventory() {
+    if (footerIconsInventoryProc.running) return
+    const script = pluginScriptPath("icons-inventory.sh")
+    if (!script) return
+    footerIconsInventoryProc.command = [script]
+    footerIconsInventoryProc.running = true
+  }
+
+  function updateFooterIconPreviews() {
+    const selected = String(currentIconTheme || "").trim()
+    let folder = ""
+    let app = ""
+    let mime = ""
+    if (selected && Array.isArray(iconsInventoryThemes)) {
+      for (let i = 0; i < iconsInventoryThemes.length; i++) {
+        const theme = iconsInventoryThemes[i]
+        if (theme && theme.name === selected) {
+          folder = String(theme.folder || "")
+          app = String(theme.app || "")
+          mime = String(theme.mime || "")
+          break
+        }
+      }
+    }
+    footerIconFolder = folder
+    footerIconApp = app
+    footerIconMime = mime
+  }
+
   function scheduleThemeMemoryRestore(themeName, force) {
     const name = String(themeName || "").trim()
     if (!name) return
-    if (!force && name === lastRestoredThemeName && !themeMemoryRestoreTimer.running)
+    if (!force && name === lastRestoredThemeName
+        && !themeMemoryRestoreTimer.running
+        && !themeMemoryVerifyTimer.running)
       return
     themeMemoryRestoreTimer.themeName = name
+    themeMemoryRestoreTimer.waitedMs = 0
+    themeMemoryRestoreTimer.lockFree = false
     themeMemoryRestoreTimer.restart()
   }
 
@@ -294,6 +360,27 @@ Item {
 
     if (icons && icons !== currentIconTheme)
       applyIconTheme(icons, false)
+
+    themeMemoryVerifyTimer.themeName = name
+    themeMemoryVerifyTimer.expectedWallpaper = wallpaper
+    themeMemoryVerifyTimer.restart()
+  }
+
+  function verifyThemeMemoryRestore(themeName, expectedWallpaper) {
+    const name = String(themeName || "").trim()
+    const expected = ThemeMemoryModel.safePath(expectedWallpaper)
+    if (!name || !expected) return
+    themeMemoryVerifyProc.command = [
+      "bash",
+      "-c",
+      'expected="$1"; current=$(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null || true); '
+      + 'if [[ -n $expected && $current != "$expected" ]]; then echo MISMATCH; else echo OK; fi',
+      "theme-memory-verify",
+      expected
+    ]
+    themeMemoryVerifyProc.themeName = name
+    themeMemoryVerifyProc.expectedWallpaper = expected
+    themeMemoryVerifyProc.running = true
   }
 
   function applyIconTheme(iconName, persist) {
@@ -394,8 +481,10 @@ Item {
   }
 
   function acceptIconsInventory(text) {
-    if (!iconsMode) return
     const themes = IconThemeModel.loadInventoryRows(String(text || ""))
+    iconsInventoryThemes = themes
+    updateFooterIconPreviews()
+    if (!iconsMode) return
     const rows = IconThemeModel.carouselRows(themes, currentIconTheme)
     imageArray = rows
     selectedIndex = IconThemeModel.indexForIconTheme(rows, currentIconTheme)
@@ -1065,10 +1154,36 @@ Item {
 
   Timer {
     id: themeMemoryRestoreTimer
-    interval: 550
+    interval: 250
+    repeat: true
+    property string themeName: ""
+    property int waitedMs: 0
+    property bool lockFree: false
+    onTriggered: {
+      waitedMs += interval
+      // Lock file persists after unlock; probe flock ownership instead of existence.
+      if (!themeSetLockProbe.running) {
+        themeSetLockProbe.command = [
+          "bash",
+          "-c",
+          'lock="${XDG_RUNTIME_DIR:-/tmp}/omarchy-theme-set.lock"; flock -n "$lock" true'
+        ]
+        themeSetLockProbe.running = true
+      }
+      if (waitedMs >= 8000) {
+        stop()
+        root.restoreThemeMemory(themeName)
+      }
+    }
+  }
+
+  Timer {
+    id: themeMemoryVerifyTimer
+    interval: 3500
     repeat: false
     property string themeName: ""
-    onTriggered: root.restoreThemeMemory(themeName)
+    property string expectedWallpaper: ""
+    onTriggered: root.verifyThemeMemoryRestore(themeName, expectedWallpaper)
   }
 
   Timer {
@@ -1081,6 +1196,48 @@ Item {
   Process {
     id: memoryBgProc
     onExited: root.restoringThemeMemory = false
+  }
+
+  Process {
+    id: themeSetLockProbe
+    onExited: function(exitCode) {
+      if (exitCode === 0)
+        themeMemoryRestoreTimer.lockFree = true
+      if (!themeMemoryRestoreTimer.running)
+        return
+      if (themeMemoryRestoreTimer.lockFree || themeMemoryRestoreTimer.waitedMs >= 8000) {
+        themeMemoryRestoreTimer.stop()
+        root.restoreThemeMemory(themeMemoryRestoreTimer.themeName)
+      }
+    }
+  }
+
+  Process {
+    id: themeMemoryVerifyProc
+    property string themeName: ""
+    property string expectedWallpaper: ""
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        if (String(text || "").trim() === "MISMATCH")
+          root.restoreThemeMemory(themeMemoryVerifyProc.themeName)
+      }
+    }
+  }
+
+  Process {
+    id: hookInstallProc
+  }
+
+  Process {
+    id: footerIconsInventoryProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        root.iconsInventoryThemes = IconThemeModel.loadInventoryRows(String(text || ""))
+        root.updateFooterIconPreviews()
+      }
+    }
   }
 
   Process {
@@ -1772,20 +1929,68 @@ Item {
           onClicked: root.openWallhaven()
         }
 
-        Button {
+        Rectangle {
           id: iconsBrowseButton
           visible: root.canOpenIconsMode
           anchors.verticalCenter: parent.verticalCenter
           anchors.right: uninstallButton.visible ? uninstallButton.left : parent.right
           anchors.rightMargin: uninstallButton.visible ? Style.space(8) : 0
-          text: "Icons"
-          tooltipText: "Browse installed icon themes with live previews (Ctrl+I)"
-          foreground: root.foreground
-          accent: root.livePaletteAccent
-          bordered: true
-          horizontalPadding: Style.space(12)
-          verticalPadding: Style.space(7)
-          onClicked: root.openIcons()
+          implicitWidth: iconsBrowseContent.implicitWidth + Style.space(18)
+          implicitHeight: Math.max(Style.space(34), iconsBrowseContent.implicitHeight + Style.space(12))
+          radius: Style.cornerRadius > 0 ? Style.cornerRadius : Style.space(8)
+          color: Util.alpha(root.livePaletteBase, iconsBrowseMouse.containsMouse ? 0.72 : 0.86)
+          border.width: 1
+          border.color: iconsBrowseMouse.containsMouse
+            ? Util.alpha(root.livePaletteAccent, 0.9)
+            : Util.alpha(root.foreground, 0.38)
+
+          Row {
+            id: iconsBrowseContent
+            anchors.centerIn: parent
+            spacing: Style.space(8)
+
+            Row {
+              visible: root.footerIconHasPreviews
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(4)
+
+              Repeater {
+                model: [root.footerIconFolder, root.footerIconApp, root.footerIconMime].filter(function(path) {
+                  return !!path
+                })
+
+                Image {
+                  required property var modelData
+                  width: Style.space(18)
+                  height: width
+                  source: modelData ? Util.fileUrl(modelData) : ""
+                  fillMode: Image.PreserveAspectFit
+                  asynchronous: true
+                  cache: true
+                  smooth: true
+                }
+              }
+            }
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              text: root.footerIconLabel
+              color: root.foreground
+              font.pixelSize: Style.font.body
+              font.weight: Font.DemiBold
+              elide: Text.ElideRight
+              maximumLineCount: 1
+              textFormat: Text.PlainText
+            }
+          }
+
+          MouseArea {
+            id: iconsBrowseMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: root.openIcons()
+          }
         }
 
         Button {

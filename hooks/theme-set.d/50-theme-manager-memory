@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Restore Theme Manager per-theme wallpaper/icons after omarchy-theme-set.
+# Invoked as: omarchy-hook theme-set <theme-name>
+set -euo pipefail
+
+THEME_NAME=${1:-}
+MEMORY_FILE="${HOME}/.config/omarchy/theme-manager-memory.json"
+ICONS_THEME_PATH="${HOME}/.local/state/omarchy/current/theme/icons.theme"
+
+[[ -n $THEME_NAME ]] || exit 0
+[[ -f $MEMORY_FILE ]] || exit 0
+
+# Reject unsafe theme names (path traversal / control chars).
+if [[ $THEME_NAME == *'/'* || $THEME_NAME == *'..'* || $THEME_NAME == *$'\0'* ]]; then
+  exit 0
+fi
+if ((${#THEME_NAME} > 255)); then
+  exit 0
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  exit 0
+fi
+
+read_entry() {
+  THEME_NAME="$THEME_NAME" MEMORY_FILE="$MEMORY_FILE" python3 - <<'PY'
+import json, os, sys
+
+theme = os.environ.get("THEME_NAME", "")
+path = os.environ.get("MEMORY_FILE", "")
+try:
+    with open(path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+except Exception:
+    sys.exit(0)
+
+themes = data.get("themes") if isinstance(data, dict) else None
+if not isinstance(themes, dict):
+    sys.exit(0)
+
+entry = themes.get(theme)
+if not isinstance(entry, dict):
+    sys.exit(0)
+
+wallpaper = entry.get("wallpaper") if isinstance(entry.get("wallpaper"), str) else ""
+icons = entry.get("icons") if isinstance(entry.get("icons"), str) else ""
+
+wallpaper = wallpaper.strip()
+icons = icons.strip()
+
+if wallpaper and (not wallpaper.startswith("/") or len(wallpaper) > 4096 or "\0" in wallpaper):
+    wallpaper = ""
+if icons and (len(icons) > 255 or "/" in icons or "\0" in icons or icons.startswith(".")
+              or not __import__("re").match(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$", icons)):
+    icons = ""
+
+print(wallpaper)
+print(icons)
+PY
+}
+
+mapfile -t ENTRY < <(read_entry || true)
+WALLPAPER=${ENTRY[0]:-}
+ICONS=${ENTRY[1]:-}
+
+if [[ -n $WALLPAPER && -f $WALLPAPER ]]; then
+  if command -v omarchy-theme-bg-set >/dev/null 2>&1; then
+    omarchy-theme-bg-set "$WALLPAPER" || true
+  fi
+fi
+
+if [[ -n $ICONS ]]; then
+  mkdir -p "$(dirname "$ICONS_THEME_PATH")"
+  printf '%s\n' "$ICONS" >"$ICONS_THEME_PATH"
+  if command -v gsettings >/dev/null 2>&1 && [[ -n ${DBUS_SESSION_BUS_ADDRESS:-} ]]; then
+    gsettings set org.gnome.desktop.interface icon-theme "$ICONS" || true
+  fi
+fi
+
+exit 0
