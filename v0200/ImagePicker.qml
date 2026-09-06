@@ -7,14 +7,16 @@ import QtQuick.Shapes
 import qs.Commons
 import qs.Ui
 import "ImagePickerModel.js" as ImagePickerModel
+import "IconThemeModel.js" as IconThemeModel
 import "ThemeManagerModel.js" as ThemeManagerModel
+import "ThemeMemoryModel.js" as ThemeMemoryModel
 import "WallpaperBrowserModel.js" as WallpaperBrowserModel
 import "WallpaperCommandModel.js" as WallpaperCommandModel
 
 Item {
   id: root
 
-  readonly property string buildIdentity: "0.4.0"
+  readonly property string buildIdentity: "0.5.0"
   // Injected by omarchy-shell; defaults to the session OMARCHY_PATH.
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property var manifest: null
@@ -48,13 +50,32 @@ Item {
   property string localFilterText: ""
   property bool wallpaperPickerRequest: false
   readonly property string wallpaperCommandStatePath: Quickshell.env("HOME") + "/.config/omarchy/wallpaper-command-center.json"
+  readonly property string themeMemoryStatePath: Quickshell.env("HOME") + "/.config/omarchy/theme-manager-memory.json"
   readonly property string currentThemeRoot: stateHome + "/omarchy/current/theme/backgrounds"
   readonly property string currentThemeNamePath: stateHome + "/omarchy/current/theme.name"
+  readonly property string currentIconsThemePath: stateHome + "/omarchy/current/theme/icons.theme"
   property string currentThemeName: ""
+  property string currentIconTheme: ""
   property var favoriteIds: []
   property bool favoritesOnly: false
+  property bool iconsMode: false
+  property var iconsPreviousImages: []
+  property int iconsPreviousIndex: 0
+  property string iconsPreviousFilter: ""
+  property bool iconsPreviousFilterable: false
+  property bool iconsPreviousShowLabels: false
+  property bool iconsPreviousWallpaperRequest: false
+  property var themeMemoryState: ({ version: 1, themes: {} })
+  property string lastRestoredThemeName: ""
+  property bool restoringThemeMemory: false
+  property string statusToast: ""
   readonly property bool wallpaperPickerActive: wallpaperPickerRequest
-  readonly property bool localWallpaperMode: wallpaperPickerActive && !wallhavenMode && !catalogMode
+  readonly property bool localWallpaperMode: wallpaperPickerActive && !wallhavenMode && !catalogMode && !iconsMode
+  readonly property bool iconsPickerActive: iconsMode
+  readonly property bool canOpenIconsMode: !catalogMode && !wallhavenMode && !iconsMode
+    && (wallpaperPickerActive || themeManager.themePickerActive)
+  readonly property bool hasWallpaperMemory: ThemeMemoryModel.hasWallpaperOverride(themeMemoryState, currentThemeName)
+  readonly property bool hasIconsMemory: ThemeMemoryModel.hasIconsOverride(themeMemoryState, currentThemeName)
   readonly property bool currentFavorite: localWallpaperMode
     && WallpaperCommandModel.isFavorite(favoriteIds, currentPath(), wallpaperFavoriteContext())
   readonly property string wallhavenFilterSummary: WallpaperBrowserModel.filterSummary({
@@ -100,10 +121,10 @@ Item {
   property int sliceHeight: 432
   property int sliceSpacing: -30
   property int skewOffset: 28
-  property int bottomChromeHeight: wallhavenMode || catalogMode
+  property int bottomChromeHeight: wallhavenMode || catalogMode || iconsMode
     ? 150
     : (wallpaperPickerActive
-        ? 78
+        ? 96
         : (showLabels ? (filterable ? 104 : 74) : (filterable ? 60 : 30)))
 
   Component.onCompleted: console.info("Theme Manager runtime " + buildIdentity)
@@ -130,9 +151,14 @@ Item {
         ? "catalog"
         : (wallhavenMode
             ? "wallhaven"
-            : (themeManager.themePickerActive
-                ? "themes"
-                : (wallpaperPickerActive ? "wallpapers" : "images"))),
+            : (iconsMode
+                ? "icons"
+                : (themeManager.themePickerActive
+                    ? "themes"
+                    : (wallpaperPickerActive ? "wallpapers" : "images")))),
+      hasWallpaperMemory: hasWallpaperMemory,
+      hasIconsMemory: hasIconsMemory,
+      currentIconTheme: currentIconTheme,
       images: imageArray.length,
       query: wallhavenMode ? filterText : "",
       filtersOpen: filterSheet.opened,
@@ -148,6 +174,8 @@ Item {
     if (!opened) {
       if (catalogMode) leaveCatalog(false)
       if (wallhavenMode) leaveWallhaven(false)
+      if (iconsMode) leaveIcons(false)
+      statusToast = ""
       layoutSettled = false
     }
   }
@@ -205,6 +233,194 @@ Item {
 
   function saveWallpaperCommandState() {
     wallpaperCommandState.setText(WallpaperCommandModel.serializeState(favoriteIds))
+  }
+
+  function loadThemeMemoryState(raw) {
+    themeMemoryState = ThemeMemoryModel.parseState(raw)
+  }
+
+  function saveThemeMemoryState() {
+    themeMemoryStateFile.setText(ThemeMemoryModel.serializeState(themeMemoryState))
+  }
+
+  function showStatus(message) {
+    statusToast = String(message || "")
+    if (statusToast) statusToastTimer.restart()
+  }
+
+  function rememberWallpaperSelection(path) {
+    if (restoringThemeMemory || !wallpaperPickerActive) return
+    const themeName = String(currentThemeName || "").trim()
+    const target = ThemeMemoryModel.safePath(path)
+    if (!themeName || !target) return
+    themeMemoryState = ThemeMemoryModel.setWallpaper(themeMemoryState, themeName, target)
+    saveThemeMemoryState()
+  }
+
+  function rememberIconSelection(iconName, iconsDefault) {
+    const themeName = String(currentThemeName || "").trim()
+    const icons = ThemeMemoryModel.safeIconName(iconName)
+    if (!themeName || !icons) return
+    themeMemoryState = ThemeMemoryModel.setIcons(
+      themeMemoryState,
+      themeName,
+      icons,
+      iconsDefault || currentIconTheme)
+    saveThemeMemoryState()
+  }
+
+  function scheduleThemeMemoryRestore(themeName, force) {
+    const name = String(themeName || "").trim()
+    if (!name) return
+    if (!force && name === lastRestoredThemeName && !themeMemoryRestoreTimer.running)
+      return
+    themeMemoryRestoreTimer.themeName = name
+    themeMemoryRestoreTimer.restart()
+  }
+
+  function restoreThemeMemory(themeName) {
+    const name = String(themeName || currentThemeName || "").trim()
+    if (!name) return
+
+    lastRestoredThemeName = name
+    const wallpaper = ThemeMemoryModel.rememberedWallpaper(themeMemoryState, name)
+    const icons = ThemeMemoryModel.rememberedIcons(themeMemoryState, name)
+
+    if (wallpaper) {
+      restoringThemeMemory = true
+      memoryBgProc.command = ["omarchy-theme-bg-set", wallpaper]
+      memoryBgProc.running = true
+    }
+
+    if (icons && icons !== currentIconTheme)
+      applyIconTheme(icons, false)
+  }
+
+  function applyIconTheme(iconName, persist) {
+    const icons = ThemeMemoryModel.safeIconName(iconName)
+    if (!icons) return
+    const previous = String(currentIconTheme || "").trim()
+    if (persist !== false)
+      rememberIconSelection(icons, previous)
+
+    iconApplyProc.command = [
+      "bash",
+      "-c",
+      "printf '%s\n' " + Util.shellQuote(icons)
+        + " > " + Util.shellQuote(currentIconsThemePath)
+        + " && gsettings set org.gnome.desktop.interface icon-theme "
+        + Util.shellQuote(icons)
+    ]
+    iconApplyProc.running = true
+    currentIconTheme = icons
+    showStatus("Icons · " + IconThemeModel.labelForIconTheme(icons))
+  }
+
+  function resetWallpaperDefaults() {
+    const themeName = String(currentThemeName || "").trim()
+    if (!themeName) return
+    themeMemoryState = ThemeMemoryModel.clearWallpaper(themeMemoryState, themeName)
+    saveThemeMemoryState()
+    restoringThemeMemory = true
+    memoryBgProc.command = [
+      "bash",
+      "-c",
+      'theme="$1"; link="$HOME/.local/state/omarchy/current/background"; '
+      + 'mapfile -d "" -t bgs < <(find -L "$HOME/.config/omarchy/backgrounds/$theme/" '
+      + '"$HOME/.local/state/omarchy/current/theme/backgrounds/" -maxdepth 1 -type f '
+      + '\( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.gif" '
+      + '-o -iname "*.bmp" -o -iname "*.webp" \) -print0 2>/dev/null | sort -z); '
+      + 'if ((${#bgs[@]}==0)); then echo "No theme background found" >&2; exit 1; fi; '
+      + 'omarchy-theme-bg-set "${bgs[0]}"',
+      "omarchy-theme-bg-default",
+      themeName
+    ]
+    memoryBgProc.running = true
+    showStatus("Wallpaper defaults restored")
+  }
+
+  function resetIconDefaults() {
+    const themeName = String(currentThemeName || "").trim()
+    if (!themeName) return
+    const fallback = ThemeMemoryModel.rememberedIconsDefault(themeMemoryState, themeName)
+    themeMemoryState = ThemeMemoryModel.clearIcons(themeMemoryState, themeName)
+    saveThemeMemoryState()
+    iconResetProc.command = [
+      "bash",
+      "-c",
+      'theme="$1"; fallback="$2"; '
+      + 'dir=$(omarchy-theme-dir "$theme" 2>/dev/null || true); '
+      + 'value=""; '
+      + 'if [[ -n $fallback ]]; then value=$fallback; '
+      + 'elif [[ -f $dir/icons.theme ]]; then value=$(<"$dir/icons.theme"); '
+      + 'else value=Yaru-blue; fi; '
+      + 'value=$(printf "%s" "$value" | tr -d "\r\n"); '
+      + 'printf "%s\n" "$value" > "$HOME/.local/state/omarchy/current/theme/icons.theme"; '
+      + 'gsettings set org.gnome.desktop.interface icon-theme "$value"; '
+      + 'printf "%s\n" "$value"',
+      "omarchy-theme-icons-default",
+      themeName,
+      fallback
+    ]
+    iconResetProc.running = true
+  }
+
+  function openIcons() {
+    if (!canOpenIconsMode) return
+    const script = pluginScriptPath("icons-inventory.sh")
+    if (!script) return
+
+    if (!iconsMode) {
+      iconsPreviousImages = imageArray
+      iconsPreviousIndex = selectedIndex
+      iconsPreviousFilter = filterText
+      iconsPreviousFilterable = filterable
+      iconsPreviousShowLabels = showLabels
+      iconsPreviousWallpaperRequest = wallpaperPickerRequest
+    }
+
+    iconsMode = true
+    filterSheet.opened = false
+    imageArray = []
+    selectedIndex = 0
+    filterText = ""
+    filterable = true
+    showLabels = true
+    imagesLoaded = true
+    layoutSettled = true
+    iconsInventoryProc.command = [script]
+    iconsInventoryProc.running = true
+    Qt.callLater(focusPicker)
+  }
+
+  function acceptIconsInventory(text) {
+    if (!iconsMode) return
+    const themes = IconThemeModel.loadInventoryRows(String(text || ""))
+    const rows = IconThemeModel.carouselRows(themes, currentIconTheme)
+    imageArray = rows
+    selectedIndex = IconThemeModel.indexForIconTheme(rows, currentIconTheme)
+    imagesLoaded = true
+    layoutSettled = true
+    if (rows.length === 0) showStatus("No icon themes found")
+    Qt.callLater(focusPicker)
+  }
+
+  function leaveIcons(restoreFocus) {
+    if (!iconsMode) return
+    iconsMode = false
+    imageArray = iconsPreviousImages
+    selectedIndex = Math.min(iconsPreviousIndex, Math.max(0, imageArray.length - 1))
+    filterText = iconsPreviousFilter
+    filterable = iconsPreviousFilterable
+    showLabels = iconsPreviousShowLabels
+    wallpaperPickerRequest = iconsPreviousWallpaperRequest
+    iconsPreviousImages = []
+    iconsPreviousIndex = 0
+    iconsPreviousFilter = ""
+    iconsPreviousFilterable = false
+    iconsPreviousShowLabels = false
+    iconsPreviousWallpaperRequest = false
+    if (restoreFocus !== false) Qt.callLater(focusPicker)
   }
 
   function reorderWallpapers() {
@@ -269,6 +485,12 @@ Item {
       return parts.join("  ·  ")
     }
 
+    if (iconsMode) {
+      const parts = [String(item.displayName || item.iconTheme || "Icons")]
+      if (item.current || item.iconTheme === currentIconTheme) parts.push("active")
+      return parts.join("  ·  ")
+    }
+
     if (item.displayName) return String(item.displayName)
     return labelForPath(item.filePath)
   }
@@ -288,6 +510,7 @@ Item {
 
   function openCatalog() {
     if (wallhavenMode
+        || iconsMode
         || !themeManager.themePickerActive
         || !themeManager.inventoryReady
         || catalogMode) return
@@ -295,7 +518,7 @@ Item {
   }
 
   function enterCatalog(rows) {
-    if (wallhavenMode || !Array.isArray(rows) || rows.length === 0) return
+    if (wallhavenMode || iconsMode || !Array.isArray(rows) || rows.length === 0) return
 
     if (!catalogMode) {
       catalogPreviousImages = imageArray
@@ -333,7 +556,7 @@ Item {
   }
 
   function removeThemeFromRows(name) {
-    if (catalogMode || wallhavenMode) return
+    if (catalogMode || wallhavenMode || iconsMode) return
 
     const previousIndex = selectedIndex
     const nextImages = ThemeManagerModel.withoutNamedImage(imageArray, name)
@@ -352,6 +575,8 @@ Item {
   function itemMatches(index) {
     if (wallhavenMode)
       return index >= 0 && index < imageArray.length
+    if (iconsMode)
+      return ImagePickerModel.itemMatches(imageArray, index, filterText)
     if (localWallpaperMode && favoritesOnly) {
       if (index < 0 || index >= imageArray.length) return false
       const item = imageArray[index]
@@ -461,7 +686,7 @@ Item {
   }
 
   function openWallhaven() {
-    if (catalogMode || !wallpaperPickerActive || wallhavenMode) return
+    if (catalogMode || iconsMode || !wallpaperPickerActive || wallhavenMode) return
 
     localImages = imageArray
     localSelectedIndex = selectedIndex
@@ -529,6 +754,8 @@ Item {
       return
     }
 
+    if (wallpaperPickerActive) rememberWallpaperSelection(path)
+
     const activeSelectionFile = selectionFile
     const activeDoneFile = doneFile
     applySerial = requestSerial
@@ -546,6 +773,13 @@ Item {
       return
     }
 
+    if (iconsMode) {
+      const item = currentItem()
+      if (!item || !item.iconTheme) return
+      applyIconTheme(String(item.iconTheme), true)
+      return
+    }
+
     if (wallhavenMode) {
       const item = currentItem()
       if (!item || wallhaven.downloading) return
@@ -559,6 +793,7 @@ Item {
   function cancel() {
     if (catalogMode) leaveCatalog(false)
     if (wallhavenMode) leaveWallhaven(false)
+    if (iconsMode) leaveIcons(false)
 
     if (requestActive)
       finishDoneFile(doneFile)
@@ -572,6 +807,7 @@ Item {
   function closeSelector(nextDoneFile) {
     if (catalogMode) leaveCatalog(false)
     if (wallhavenMode) leaveWallhaven(false)
+    if (iconsMode) leaveIcons(false)
     requestSerial += 1
 
     if (requestActive)
@@ -609,6 +845,7 @@ Item {
   function openSelector(nextImageDirs, nextImageRows, nextSelectedImage, nextSelectionFile, nextDoneFile, nextShowLabels, nextFilterable) {
     if (catalogMode) leaveCatalog(false)
     if (wallhavenMode) leaveWallhaven(false)
+    if (iconsMode) leaveIcons(false)
     if (requestActive && doneFile && doneFile !== nextDoneFile)
       finishDoneFile(doneFile)
 
@@ -719,16 +956,51 @@ Item {
   }
 
   FileView {
+    id: themeMemoryStateFile
+    path: root.themeMemoryStatePath
+    atomicWrites: true
+    printErrors: false
+    onLoaded: {
+      root.loadThemeMemoryState(text())
+      root.lastRestoredThemeName = ""
+      if (root.currentThemeName)
+        root.scheduleThemeMemoryRestore(root.currentThemeName, true)
+    }
+    onLoadFailed: {
+      root.loadThemeMemoryState("")
+      root.lastRestoredThemeName = ""
+      if (root.currentThemeName)
+        root.scheduleThemeMemoryRestore(root.currentThemeName, true)
+    }
+  }
+
+  FileView {
     id: currentThemeNameFile
     path: root.currentThemeNamePath
     watchChanges: true
     printErrors: false
     onLoaded: {
-      root.currentThemeName = String(text() || "").trim().slice(0, 255)
+      const nextName = String(text() || "").trim().slice(0, 255)
+      const changed = nextName !== root.currentThemeName
+      root.currentThemeName = nextName
+      if (changed) {
+        root.lastRestoredThemeName = ""
+        root.scheduleThemeMemoryRestore(nextName, true)
+      }
       if (root.localWallpaperMode && root.imageArray.length > 0)
         root.reorderWallpapers()
     }
     onLoadFailed: root.currentThemeName = ""
+    onFileChanged: reload()
+  }
+
+  FileView {
+    id: currentIconsThemeFile
+    path: root.currentIconsThemePath
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.currentIconTheme = String(text() || "").trim().slice(0, 255)
+    onLoadFailed: root.currentIconTheme = ""
     onFileChanged: reload()
   }
 
@@ -788,6 +1060,58 @@ Item {
     onTriggered: {
       if (root.wallhavenMode)
         root.searchWallhaven()
+    }
+  }
+
+  Timer {
+    id: themeMemoryRestoreTimer
+    interval: 550
+    repeat: false
+    property string themeName: ""
+    onTriggered: root.restoreThemeMemory(themeName)
+  }
+
+  Timer {
+    id: statusToastTimer
+    interval: 2200
+    repeat: false
+    onTriggered: root.statusToast = ""
+  }
+
+  Process {
+    id: memoryBgProc
+    onExited: root.restoringThemeMemory = false
+  }
+
+  Process {
+    id: iconApplyProc
+  }
+
+  Process {
+    id: iconResetProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        const value = String(text || "").trim()
+        if (value) {
+          root.currentIconTheme = value
+          root.showStatus("Icon defaults · " + IconThemeModel.labelForIconTheme(value))
+        } else {
+          root.showStatus("Icon defaults restored")
+        }
+      }
+    }
+  }
+
+  Process {
+    id: iconsInventoryProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.acceptIconsInventory(String(text || ""))
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0 && root.iconsMode)
+        root.showStatus("Icon inventory failed")
     }
   }
 
@@ -893,16 +1217,23 @@ Item {
                    && themeManager.themePickerActive) {
           themeManager.requestUninstall()
           event.accepted = true
+        } else if (event.key === Qt.Key_I
+            && (event.modifiers & Qt.ControlModifier) !== 0
+            && root.canOpenIconsMode) {
+          root.openIcons()
+          event.accepted = true
         } else if (event.key === Qt.Key_B
             && (event.modifiers & Qt.ControlModifier) !== 0
             && root.wallpaperPickerActive
-            && !root.wallhavenMode) {
+            && !root.wallhavenMode
+            && !root.iconsMode) {
           root.openWallhaven()
           event.accepted = true
         } else if (event.key === Qt.Key_B
                    && (event.modifiers & Qt.ControlModifier) !== 0
                    && !root.catalogMode
                    && !root.wallhavenMode
+                   && !root.iconsMode
                    && themeManager.themePickerActive) {
           root.openCatalog()
           event.accepted = true
@@ -932,6 +1263,8 @@ Item {
             root.updateFilter("")
           } else if (root.wallhavenMode) {
             root.leaveWallhaven(true)
+          } else if (root.iconsMode) {
+            root.leaveIcons(true)
           } else if (root.catalogMode) {
             root.leaveCatalog(true)
           } else {
@@ -941,7 +1274,7 @@ Item {
         } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
           root.applySelected()
           event.accepted = true
-        } else if ((root.wallhavenMode || root.filterable) && Util.editsFilter(event, root.filterText)) {
+        } else if ((root.wallhavenMode || root.iconsMode || root.filterable) && Util.editsFilter(event, root.filterText)) {
           root.updateFilter(Util.editedFilter(event, root.filterText))
           event.accepted = true
         } else if (event.key === Qt.Key_Left || (event.key === Qt.Key_Tab && event.modifiers & Qt.ShiftModifier) || event.key === Qt.Key_Backtab) {
@@ -950,7 +1283,7 @@ Item {
         } else if (event.key === Qt.Key_Right || event.key === Qt.Key_Tab) {
           root.selectAdjacent(1)
           event.accepted = true
-        } else if ((root.wallhavenMode || root.filterable)
+        } else if ((root.wallhavenMode || root.iconsMode || root.filterable)
                    && event.text
                    && event.text.length === 1
                    && event.text.charCodeAt(0) >= 32
@@ -1037,7 +1370,7 @@ Item {
             readonly property int relativeIndex: root.filteredPosition(index) - root.selectedFilteredPosition()
             readonly property bool selected: matched && index === root.selectedIndex
             readonly property bool nearby: matched
-              && Math.abs(relativeIndex) <= (root.wallhavenMode || root.catalogMode ? 7 : 16)
+              && Math.abs(relativeIndex) <= (root.wallhavenMode || root.catalogMode || root.iconsMode ? 7 : 16)
             property bool sourceActivated: nearby
             onNearbyChanged: if (nearby) sourceActivated = true
 
@@ -1114,7 +1447,8 @@ Item {
                 anchors.fill: parent
                 // Aether owns local Wallhaven thumbnails. Theme catalog URLs
                 // have already passed ThemeCatalogModel's strict allowlist.
-                source: item.sourceActivated && item.thumbnailPath
+                visible: !root.iconsMode
+                source: item.sourceActivated && item.thumbnailPath && !root.iconsMode
                   ? (root.catalogMode
                       ? item.thumbnailPath
                       : Util.fileUrl(item.thumbnailPath))
@@ -1123,6 +1457,72 @@ Item {
                 asynchronous: root.wallhavenMode || root.catalogMode
                 cache: true
                 smooth: true
+              }
+
+              Item {
+                id: iconPreviewPanel
+                anchors.fill: parent
+                visible: root.iconsMode
+
+                Rectangle {
+                  anchors.fill: parent
+                  color: Util.alpha(root.livePaletteBase, item.selected ? 0.55 : 0.72)
+                }
+
+                Column {
+                  anchors.centerIn: parent
+                  spacing: Style.space(item.selected ? 18 : 10)
+                  width: parent.width - Style.space(item.selected ? 48 : 20)
+
+                  Row {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: Style.space(item.selected ? 18 : 8)
+
+                    Repeater {
+                      model: [
+                        item.imageData && item.imageData.previewFolder,
+                        item.imageData && item.imageData.previewApp,
+                        item.imageData && item.imageData.previewMime
+                      ].filter(function(path) { return !!path })
+
+                      Image {
+                        required property var modelData
+                        width: item.selected ? 72 : 28
+                        height: width
+                        source: item.sourceActivated && modelData ? Util.fileUrl(modelData) : ""
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: true
+                        cache: true
+                        smooth: true
+                      }
+                    }
+                  }
+
+                  Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: parent.width
+                    visible: item.selected
+                    text: String((item.imageData && item.imageData.displayName) || item.fileName || "")
+                    color: root.foreground
+                    horizontalAlignment: Text.AlignHCenter
+                    elide: Text.ElideRight
+                    font.pixelSize: Style.font.title
+                    font.weight: Font.DemiBold
+                    textFormat: Text.PlainText
+                  }
+
+                  Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    visible: item.selected
+                      && item.imageData
+                      && (item.imageData.current || item.imageData.iconTheme === root.currentIconTheme)
+                    text: "ACTIVE"
+                    color: root.livePaletteAccent
+                    font.pixelSize: Style.font.caption
+                    font.weight: Font.Bold
+                    textFormat: Text.PlainText
+                  }
+                }
               }
 
               Text {
@@ -1242,8 +1642,11 @@ Item {
         height: Math.max(
           selectedLabel.implicitHeight,
           favoriteControls.implicitHeight,
+          defaultsControls.implicitHeight,
           wallhavenBrowseButton.implicitHeight,
           wallhavenBackButton.implicitHeight,
+          iconsBrowseButton.implicitHeight,
+          iconsBackButton.implicitHeight,
           loadMoreButton.implicitHeight,
           themeBrowseButton.implicitHeight,
           catalogBackButton.implicitHeight,
@@ -1252,8 +1655,11 @@ Item {
         )
         readonly property real sideWidth: Math.max(
           favoriteControls.visible ? favoriteControls.implicitWidth : 0,
+          defaultsControls.visible ? defaultsControls.implicitWidth : 0,
           wallhavenBrowseButton.visible && selectedLabel.visible ? wallhavenBrowseButton.implicitWidth : 0,
           wallhavenBackButton.visible ? wallhavenBackButton.implicitWidth : 0,
+          iconsBrowseButton.visible ? iconsBrowseButton.implicitWidth : 0,
+          iconsBackButton.visible ? iconsBackButton.implicitWidth : 0,
           loadMoreButton.visible ? loadMoreButton.implicitWidth : 0,
           themeBrowseButton.visible ? themeBrowseButton.implicitWidth : 0,
           catalogBackButton.visible ? catalogBackButton.implicitWidth : 0,
@@ -1292,9 +1698,49 @@ Item {
           }
         }
 
+        Row {
+          id: defaultsControls
+          visible: (root.localWallpaperMode || root.iconsMode) && !!root.currentThemeName
+          anchors.verticalCenter: parent.verticalCenter
+          anchors.left: root.iconsMode ? undefined : parent.left
+          anchors.right: root.iconsMode ? parent.right : undefined
+          anchors.leftMargin: favoriteControls.visible
+            ? favoriteControls.width + Style.space(8)
+            : 0
+          spacing: Style.space(8)
+
+          Button {
+            visible: root.localWallpaperMode
+            enabled: root.hasWallpaperMemory
+            text: "Reset wallpaper"
+            tooltipText: root.hasWallpaperMemory
+              ? "Clear remembered wallpaper and restore this theme's default background"
+              : "No remembered wallpaper override for this theme"
+            foreground: root.hasWallpaperMemory ? root.foreground : Color.muted
+            accent: root.livePaletteAccent
+            bordered: true
+            horizontalPadding: Style.space(10)
+            verticalPadding: Style.space(7)
+            onClicked: root.resetWallpaperDefaults()
+          }
+
+          Button {
+            visible: root.iconsMode
+            enabled: root.hasIconsMemory || !!root.currentIconTheme
+            text: "Icon defaults"
+            tooltipText: "Clear remembered icons and restore this theme package default"
+            foreground: root.foreground
+            accent: root.livePaletteAccent
+            bordered: true
+            horizontalPadding: Style.space(10)
+            verticalPadding: Style.space(7)
+            onClicked: root.resetIconDefaults()
+          }
+        }
+
         Text {
           id: selectedLabel
-          visible: root.showLabels || root.wallhavenMode || root.wallpaperPickerActive
+          visible: root.showLabels || root.wallhavenMode || root.wallpaperPickerActive || root.iconsMode
           anchors.centerIn: parent
           width: footer.sideWidth > 0
             ? parent.width - 2 * (footer.sideWidth + Style.space(16))
@@ -1312,9 +1758,11 @@ Item {
 
         Button {
           id: wallhavenBrowseButton
-          visible: root.wallpaperPickerActive && !root.wallhavenMode
+          visible: root.wallpaperPickerActive && !root.wallhavenMode && !root.iconsMode
           anchors.verticalCenter: parent.verticalCenter
-          x: selectedLabel.visible ? parent.width - width : (parent.width - width) / 2
+          x: selectedLabel.visible
+            ? parent.width - width - (iconsBrowseButton.visible ? iconsBrowseButton.width + Style.space(8) : 0)
+            : (parent.width - width) / 2
           text: "Browse Wallhaven"
           tooltipText: "Browse SFW Wallhaven wallpapers through Aether (Ctrl+B)"
           foreground: root.foreground
@@ -1326,9 +1774,41 @@ Item {
         }
 
         Button {
+          id: iconsBrowseButton
+          visible: root.canOpenIconsMode
+          anchors.verticalCenter: parent.verticalCenter
+          anchors.right: uninstallButton.visible ? uninstallButton.left : parent.right
+          anchors.rightMargin: uninstallButton.visible ? Style.space(8) : 0
+          text: "Icons"
+          tooltipText: "Browse installed icon themes with live previews (Ctrl+I)"
+          foreground: root.foreground
+          accent: root.livePaletteAccent
+          bordered: true
+          horizontalPadding: Style.space(12)
+          verticalPadding: Style.space(7)
+          onClicked: root.openIcons()
+        }
+
+        Button {
+          id: iconsBackButton
+          visible: root.iconsMode
+          anchors.left: parent.left
+          anchors.verticalCenter: parent.verticalCenter
+          text: "Back"
+          tooltipText: "Return from icon themes (Escape)"
+          foreground: root.foreground
+          accent: Color.accent
+          bordered: true
+          horizontalPadding: Style.space(12)
+          verticalPadding: Style.space(7)
+          onClicked: root.leaveIcons(true)
+        }
+
+        Button {
           id: themeBrowseButton
           visible: !root.catalogMode
             && !root.wallhavenMode
+            && !root.iconsMode
             && themeManager.themePickerActive
           enabled: themeManager.inventoryReady
             && !themeCatalog.loading
@@ -1404,6 +1884,7 @@ Item {
           id: uninstallButton
           visible: !root.catalogMode
             && !root.wallhavenMode
+            && !root.iconsMode
             && themeManager.themePickerActive
             && themeManager.inventoryReady
             && themeManager.selectedThemeInstalled
@@ -1447,6 +1928,21 @@ Item {
           verticalPadding: Style.space(7)
           onClicked: themeCatalog.requestInstall()
         }
+      }
+
+      Text {
+        id: statusToastLabel
+        visible: root.statusToast !== ""
+        anchors.top: footer.bottom
+        anchors.topMargin: Style.space(8)
+        anchors.horizontalCenter: carousel.horizontalCenter
+        text: root.statusToast
+        color: root.livePaletteAccent
+        style: Text.Outline
+        styleColor: Util.alpha(root.dimColor, 0.75)
+        font.pixelSize: Style.font.body
+        font.weight: Font.DemiBold
+        textFormat: Text.PlainText
       }
 
       WallhavenFilterBar {

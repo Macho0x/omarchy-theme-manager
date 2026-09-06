@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 - 2026-09-06
+
+- Remember per-theme wallpaper and icon overrides in
+  `~/.config/omarchy/theme-manager-memory.json`, restoring them after theme
+  switches (including native `omarchy-theme-set`) once theme-set finishes.
+- Add a stylish Icons mode with live previews of installed icon themes, sticky
+  apply via `icons.theme` + `gsettings`, and keyboard access (`Ctrl+I`).
+- Add one-shot **Reset wallpaper** / **Icon defaults** controls for the active
+  theme without disturbing Wallhaven favorites or the wallpaper command center.
+
 ## 0.4.0 - 2026-09-04
 
 - Add persistent, theme-aware local wallpaper favorites with favorite-first

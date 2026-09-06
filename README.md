@@ -21,6 +21,13 @@ still has exactly one replacement for `omarchy.image-picker`.
 
 ### Wallpapers
 
+- Remember the wallpaper and icon theme you choose per Omarchy theme in
+  `~/.config/omarchy/theme-manager-memory.json`, and restore them after theme
+  switches (including native `omarchy-theme-set`).
+- Open **Icons** (`Ctrl+I`) for a live-preview grid of installed icon themes;
+  selections stick per theme via `icons.theme` + `gsettings`.
+- Clear overrides with **Reset wallpaper** / **Icon defaults** for the active
+  theme without touching Wallhaven or wallpaper favorites.
 - Save local wallpapers as persistent favorites with `Ctrl+D`, filter the
   carousel to favorites with `Ctrl+Shift+D`, and watch saved images rearrange
   into a stable front section.
@@ -121,6 +128,8 @@ Open the regular background switcher with `Super+Ctrl+Space`.
 - Press `Enter` to download and apply the selection.
 - On local wallpapers, press `Ctrl+D` to save/remove a favorite and
   `Ctrl+Shift+D` to toggle favorites-only mode.
+- Press `Ctrl+I` (or **Icons**) to browse icon themes; Enter applies and sticks.
+- Use **Reset wallpaper** / **Icon defaults** to drop overrides for the current theme.
 - Press `Escape` to clear the search, return to local wallpapers, or close.
 
 Inside the filter sheet, use Up/Down between rows, Left/Right between choices,

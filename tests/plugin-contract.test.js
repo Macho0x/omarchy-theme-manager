@@ -9,7 +9,7 @@ const read = (path) => readFile(join(process.cwd(), path), "utf8")
 test("keeps the published Theme Manager identity as the sole picker clone", async () => {
   const manifest = JSON.parse(await read("manifest.json"))
   assert.equal(manifest.id, "io.github.mtolhuys.theme-manager")
-  assert.equal(manifest.version, "0.4.0")
+  assert.equal(manifest.version, "0.5.0")
   assert.deepEqual(manifest.kinds, ["overlay"])
   assert.match(manifest.entryPoints.overlay, /^v[0-9]{4}\/ImagePicker\.qml$/)
   assert.equal(manifest.omarchy.clonedFrom, "omarchy.image-picker")
@@ -39,7 +39,9 @@ test("versions the complete QML and JavaScript runtime graph", async () => {
     "WallpaperPalette.qml",
     "WallpaperPaletteModel.js",
     "WallhavenFilterBar.qml",
-    "WallhavenFilterSheet.qml"
+    "WallhavenFilterSheet.qml",
+    "ThemeMemoryModel.js",
+    "IconThemeModel.js"
   ]) {
     assert.ok((await read(join(runtimeDir, file))).length > 0, file)
   }
@@ -60,6 +62,10 @@ test("routes theme and wallpaper features by request context", async () => {
   assert.match(picker, /root\.openWallhaven\(\)/)
   assert.match(picker, /if \(catalogMode\).*themeCatalog\.requestInstall/s)
   assert.match(picker, /if \(wallhavenMode\).*wallhaven\.download/s)
+
+  assert.match(picker, /ThemeMemoryModel/)
+  assert.match(picker, /root\.openIcons\(\)/)
+  assert.match(picker, /theme-manager-memory\.json/)
   assert.doesNotMatch(picker, /io\.github\.mtolhuys\.wallpaper-manager/)
 })
 
