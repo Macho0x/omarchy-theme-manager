@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.5 - 2026-09-06
+
+- Enlarge the wallpaper footer Actions hamburger (☰) slightly (`Style.font.icon`).
+- Animate the Actions chevron open/closed with a short rotation
+  (0° → 180°) via `Behavior` / `NumberAnimation`.
+
 ## 0.5.4 - 2026-09-06
 
 - Icons footer chip keeps the live 3-preview showcase but drops the wide theme

@@ -18,7 +18,7 @@ import "WallpaperCommandModel.js" as WallpaperCommandModel
 Item {
   id: root
 
-  readonly property string buildIdentity: "0.5.4"
+  readonly property string buildIdentity: "0.5.5"
   // Injected by omarchy-shell; defaults to the session OMARCHY_PATH.
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property var manifest: null
@@ -2402,7 +2402,8 @@ Item {
                 text: "☰"
                 color: wallpaperActionsDropdown.menuForeground
                 font.family: Style.font.family
-                font.pixelSize: Style.font.body
+                // Slightly larger than body so the hamburger reads as the primary glyph.
+                font.pixelSize: Style.font.icon
                 textFormat: Text.PlainText
               }
 
@@ -2412,6 +2413,11 @@ Item {
                 font.family: Style.font.family
                 font.pixelSize: Style.font.body
                 textFormat: Text.PlainText
+                transformOrigin: Item.Center
+                rotation: wallpaperActionsDropdown.popupOpen ? 180 : 0
+                Behavior on rotation {
+                  NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                }
               }
             }
 
