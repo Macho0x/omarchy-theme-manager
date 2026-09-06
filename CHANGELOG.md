@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.4 - 2026-09-06
+
+- Icons footer chip keeps the live 3-preview showcase but drops the wide theme
+  name label (name stays in the tooltip); click / Ctrl+I still opens Icons mode.
+- Replace the left **Actions** word trigger with a compact hamburger (☰) +
+  chevron menu, and fix popup layout (gap under trigger, padded list, full-width
+  hover) so the open menu no longer clips or double-borders.
+
 ## 0.5.3 - 2026-09-06
 
 - Restore the live **Icons** three-preview showcase chip (folder/app/mime) that

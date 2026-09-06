@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Effects
 import QtQuick.Shapes
 import qs.Commons
@@ -17,7 +18,7 @@ import "WallpaperCommandModel.js" as WallpaperCommandModel
 Item {
   id: root
 
-  readonly property string buildIdentity: "0.5.3"
+  readonly property string buildIdentity: "0.5.4"
   // Injected by omarchy-shell; defaults to the session OMARCHY_PATH.
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property var manifest: null
@@ -2343,23 +2344,202 @@ Item {
           return width
         }
 
-        Dropdown {
+        // Compact Actions menu: hamburger + chevron trigger, custom popup
+        // (system Dropdown clipped bottom padding / double-bordered against trigger).
+        Item {
           id: wallpaperActionsDropdown
           visible: root.localWallpaperMode
           anchors.left: parent.left
           anchors.verticalCenter: parent.verticalCenter
-          width: Math.min(Style.spacing.dropdownWidth, 168)
-          showLabel: false
-          value: "Actions"
-          options: root.wallpaperActionOptions
-          foreground: root.foreground
-          accent: root.livePaletteAccent
-          background: Util.alpha(root.dimColor, 0.94)
-          popupBorder: Util.alpha(root.foreground, 0.28)
-          onChanged: function(nextValue) {
-            // Keep the trigger labeled "Actions" after each pick.
-            value = "Actions"
-            root.runWallpaperAction(String(nextValue || ""))
+          implicitWidth: Style.space(52)
+          implicitHeight: Style.spacing.controlHeight
+          width: implicitWidth
+          height: implicitHeight
+
+          readonly property bool popupOpen: actionsPopup.opened
+          readonly property color menuForeground: root.foreground
+          readonly property color menuAccent: root.livePaletteAccent
+          readonly property color menuBackground: Util.alpha(root.dimColor, 0.96)
+          readonly property var menuBorderSpec: Border.localOrSurfaceSpec(
+            "popups", "border", Util.alpha(root.foreground, 0.28), Color.popups.border, Style.normalBorderWidth)
+
+          function open() { actionsPopup.open() }
+          function close() { actionsPopup.close() }
+          function toggle() { popupOpen ? close() : open() }
+
+          BorderSurface {
+            id: actionsTrigger
+            anchors.fill: parent
+            radius: Style.cornerRadius
+            readonly property bool _focused: activeFocus
+            readonly property bool _hot: actionsTriggerHover.hovered || actionsPopup.opened
+            readonly property var _borderSpec: Border.controlSpec(
+              _focused ? "focus" : (_hot ? "hover-cursor" : "normal"),
+              wallpaperActionsDropdown.menuForeground,
+              wallpaperActionsDropdown.menuAccent)
+            color: Style.controlFill(_focused, _hot, wallpaperActionsDropdown.menuForeground, wallpaperActionsDropdown.menuAccent)
+            borderSpec: _borderSpec
+            activeFocusOnTab: true
+
+            HoverHandler { id: actionsTriggerHover }
+
+            Keys.onPressed: function(event) {
+              if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+                  || event.key === Qt.Key_Space || event.key === Qt.Key_Down) {
+                wallpaperActionsDropdown.toggle()
+                event.accepted = true
+              } else if (event.key === Qt.Key_Escape && actionsPopup.opened) {
+                wallpaperActionsDropdown.close()
+                event.accepted = true
+              }
+            }
+
+            Row {
+              anchors.centerIn: parent
+              spacing: Style.spacing.xs
+
+              Text {
+                text: "☰"
+                color: wallpaperActionsDropdown.menuForeground
+                font.family: Style.font.family
+                font.pixelSize: Style.font.body
+                textFormat: Text.PlainText
+              }
+
+              Text {
+                text: "󰅀"
+                color: Qt.darker(wallpaperActionsDropdown.menuForeground, 1.2)
+                font.family: Style.font.family
+                font.pixelSize: Style.font.body
+                textFormat: Text.PlainText
+              }
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: {
+                actionsTrigger.forceActiveFocus()
+                wallpaperActionsDropdown.toggle()
+              }
+            }
+
+            PanelToolTip {
+              visible: actionsTriggerHover.hovered && !actionsPopup.opened
+              text: "Actions"
+              delay: 500
+            }
+          }
+
+          Popup {
+            id: actionsPopup
+            // Clear gap under the trigger so borders do not double-stack.
+            x: 0
+            y: actionsTrigger.height + Style.spacing.sm
+            width: Math.max(wallpaperActionsDropdown.width, Style.space(188))
+            padding: 0
+            leftPadding: Border.left(wallpaperActionsDropdown.menuBorderSpec) + Style.spacing.sm
+            rightPadding: Border.right(wallpaperActionsDropdown.menuBorderSpec) + Style.spacing.sm
+            topPadding: Border.top(wallpaperActionsDropdown.menuBorderSpec) + Style.spacing.sm
+            bottomPadding: Border.bottom(wallpaperActionsDropdown.menuBorderSpec) + Style.spacing.sm
+            focus: true
+            closePolicy: Popup.CloseOnEscape
+
+            background: BorderSurface {
+              color: wallpaperActionsDropdown.menuBackground
+              borderSpec: wallpaperActionsDropdown.menuBorderSpec
+              radius: Style.cornerRadius
+            }
+
+            onOpened: {
+              actionsList.currentIndex = 0
+              actionsList.forceActiveFocus()
+            }
+
+            // Size the popup from row count so padding is never clipped.
+            implicitHeight: {
+              var n = root.wallpaperActionOptions.length
+              var rows = Math.max(1, n) * Style.spacing.popupRowHeight
+              var gaps = Math.max(0, n - 1) * Style.spacing.xs
+              return rows + gaps + topPadding + bottomPadding
+            }
+
+            contentItem: ListView {
+              id: actionsList
+              clip: true
+              boundsBehavior: Flickable.StopAtBounds
+              spacing: Style.spacing.xs
+              width: actionsPopup.availableWidth
+              implicitHeight: contentHeight
+              model: root.wallpaperActionOptions
+              currentIndex: 0
+              keyNavigationWraps: false
+              highlightFollowsCurrentItem: false
+
+              Keys.priority: Keys.BeforeItem
+              Keys.onPressed: function(event) {
+                if (event.key === Qt.Key_Escape) {
+                  wallpaperActionsDropdown.close()
+                  event.accepted = true
+                } else if (event.key === Qt.Key_Down || event.text === "j") {
+                  currentIndex = Math.min(count - 1, currentIndex + 1)
+                  event.accepted = true
+                } else if (event.key === Qt.Key_Up || event.text === "k") {
+                  currentIndex = Math.max(0, currentIndex - 1)
+                  event.accepted = true
+                } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                  selectCurrent()
+                  event.accepted = true
+                }
+              }
+
+              function selectCurrent() {
+                if (currentIndex < 0 || currentIndex >= root.wallpaperActionOptions.length) return
+                var item = root.wallpaperActionOptions[currentIndex]
+                var value = item && typeof item === "object" ? String(item.value || "") : String(item || "")
+                wallpaperActionsDropdown.close()
+                root.runWallpaperAction(value)
+              }
+
+              delegate: Rectangle {
+                required property var modelData
+                required property int index
+                width: actionsList.width
+                height: Style.spacing.popupRowHeight
+                radius: Math.max(0, Style.cornerRadius - Style.spacing.xs)
+                color: index === actionsList.currentIndex
+                  ? Style.hoverFillFor(wallpaperActionsDropdown.menuForeground, wallpaperActionsDropdown.menuAccent)
+                  : "transparent"
+
+                Text {
+                  anchors.fill: parent
+                  anchors.leftMargin: Style.spacing.controlPaddingX
+                  anchors.rightMargin: Style.spacing.controlPaddingX
+                  verticalAlignment: Text.AlignVCenter
+                  text: modelData && typeof modelData === "object"
+                    ? String(modelData.label || "")
+                    : String(modelData || "")
+                  color: index === actionsList.currentIndex
+                    ? Style.hoverStateColor(wallpaperActionsDropdown.menuForeground, wallpaperActionsDropdown.menuAccent)
+                    : wallpaperActionsDropdown.menuForeground
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.body
+                  elide: Text.ElideRight
+                  textFormat: Text.PlainText
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onPositionChanged: actionsList.currentIndex = parent.index
+                  onClicked: {
+                    actionsList.currentIndex = parent.index
+                    actionsList.selectCurrent()
+                  }
+                }
+              }
+            }
           }
         }
 
@@ -2426,7 +2606,7 @@ Item {
           anchors.verticalCenter: parent.verticalCenter
           anchors.right: uninstallButton.visible ? uninstallButton.left : parent.right
           anchors.rightMargin: uninstallButton.visible ? Style.space(8) : 0
-          implicitWidth: iconsBrowseContent.implicitWidth + Style.space(18)
+          implicitWidth: iconsBrowseContent.implicitWidth + Style.space(14)
           implicitHeight: Math.max(Style.space(34), iconsBrowseContent.implicitHeight + Style.space(12))
           radius: Style.cornerRadius > 0 ? Style.cornerRadius : Style.space(8)
           color: Util.alpha(root.livePaletteBase, iconsBrowseMouse.containsMouse ? 0.72 : 0.86)
@@ -2440,6 +2620,7 @@ Item {
             anchors.centerIn: parent
             spacing: Style.space(8)
 
+            // Live folder/app/mime previews only — theme name lives in the tooltip.
             Row {
               visible: root.footerIconHasPreviews
               anchors.verticalCenter: parent.verticalCenter
@@ -2464,8 +2645,10 @@ Item {
             }
 
             Text {
+              // Fallback label only when inventory previews are not ready yet.
+              visible: !root.footerIconHasPreviews
               anchors.verticalCenter: parent.verticalCenter
-              text: root.footerIconLabel
+              text: "Icons"
               color: root.foreground
               font.pixelSize: Style.font.body
               font.weight: Font.DemiBold
@@ -2481,6 +2664,12 @@ Item {
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: root.openIcons()
+          }
+
+          PanelToolTip {
+            visible: iconsBrowseMouse.containsMouse
+            text: root.footerIconLabel
+            delay: 400
           }
         }
 
