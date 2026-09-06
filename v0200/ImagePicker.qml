@@ -51,8 +51,14 @@ Item {
   property bool wallpaperPickerRequest: false
   readonly property string wallpaperCommandStatePath: Quickshell.env("HOME") + "/.config/omarchy/wallpaper-command-center.json"
   readonly property string themeMemoryStatePath: Quickshell.env("HOME") + "/.config/omarchy/theme-manager-memory.json"
+  readonly property string homeDir: Quickshell.env("HOME")
+  readonly property string themeBackgroundsRoot: homeDir + "/.config/omarchy/backgrounds"
   readonly property string currentThemeRoot: stateHome + "/omarchy/current/theme/backgrounds"
   readonly property string currentThemeNamePath: stateHome + "/omarchy/current/theme.name"
+  property string pendingInstallPurpose: ""
+  property string pendingInstallSelectionFile: ""
+  property string pendingInstallDoneFile: ""
+  property int pendingInstallSerial: 0
   readonly property string currentIconsThemePath: stateHome + "/omarchy/current/theme/icons.theme"
   property string currentThemeName: ""
   property string currentIconTheme: ""
@@ -84,6 +90,9 @@ Item {
     && (wallpaperPickerActive || themeManager.themePickerActive)
   readonly property bool hasWallpaperMemory: ThemeMemoryModel.hasWallpaperOverride(themeMemoryState, currentThemeName)
   readonly property bool hasIconsMemory: ThemeMemoryModel.hasIconsOverride(themeMemoryState, currentThemeName)
+  readonly property bool canRemoveInstalledWallpaper: localWallpaperMode
+    && !!ThemeMemoryModel.safeThemeName(currentThemeName)
+    && ThemeMemoryModel.isUserInstalledWallpaper(currentPath(), homeDir, currentThemeName)
   readonly property bool currentFavorite: localWallpaperMode
     && WallpaperCommandModel.isFavorite(favoriteIds, currentPath(), wallpaperFavoriteContext())
   readonly property string wallhavenFilterSummary: WallpaperBrowserModel.filterSummary({
@@ -262,6 +271,160 @@ Item {
     if (statusToast) statusToastTimer.restart()
   }
 
+  function clearPendingInstall() {
+    pendingInstallPurpose = ""
+    pendingInstallSelectionFile = ""
+    pendingInstallDoneFile = ""
+    pendingInstallSerial = 0
+  }
+
+  function installWallpaperCommand(themeName, sourcePath) {
+    const script = pluginScriptPath("install-wallpaper.sh")
+    const name = ThemeMemoryModel.safeThemeName(themeName)
+    const target = ThemeMemoryModel.safePath(sourcePath)
+    if (!script || !name || !target) return null
+    return [script, name, target]
+  }
+
+  function beginWallpaperInstall(purpose, sourcePath, selectionPath, donePath, serial) {
+    const themeName = ThemeMemoryModel.safeThemeName(currentThemeName)
+    const target = ThemeMemoryModel.safePath(sourcePath)
+    const command = installWallpaperCommand(themeName, target)
+    if (!command) return false
+    if (wallpaperInstallProc.running) return false
+
+    pendingInstallPurpose = String(purpose || "")
+    pendingInstallSelectionFile = String(selectionPath || "")
+    pendingInstallDoneFile = String(donePath || "")
+    pendingInstallSerial = serial || 0
+    wallpaperInstallProc.command = command
+    wallpaperInstallProc.running = true
+    return true
+  }
+
+  function carouselHasWallpaper(path) {
+    const target = ThemeMemoryModel.safePath(path)
+    const base = ThemeMemoryModel.imageBasename(target)
+    if (!target) return -1
+    for (let index = 0; index < imageArray.length; index++) {
+      const item = imageArray[index]
+      if (!item) continue
+      if (item.filePath === target) return index
+      if (base && item.fileName === base) return index
+    }
+    return -1
+  }
+
+  function injectWallpaperIntoCarousel(path) {
+    const target = ThemeMemoryModel.safePath(path)
+    if (!target || !localWallpaperMode) return false
+    const base = ThemeMemoryModel.imageBasename(target) || target.split("/").pop()
+    const existing = carouselHasWallpaper(target)
+    if (existing >= 0) {
+      const item = imageArray[existing]
+      if (item && item.filePath !== target) {
+        const next = imageArray.slice()
+        next[existing] = {
+          filePath: target,
+          fileName: base,
+          thumbnailPath: target
+        }
+        imageArray = next
+      }
+      selectedIndex = existing
+      selectedImage = target
+      return true
+    }
+
+    const row = {
+      filePath: target,
+      fileName: base,
+      thumbnailPath: target
+    }
+    imageArray = [row].concat(imageArray)
+    selectedIndex = 0
+    selectedImage = target
+    reorderWallpapers()
+    return true
+  }
+
+  function ensureRememberedWallpaperInPicker() {
+    if (!localWallpaperMode) return
+    const themeName = ThemeMemoryModel.safeThemeName(currentThemeName)
+    const remembered = ThemeMemoryModel.rememberedWallpaper(themeMemoryState, themeName)
+    if (!themeName || !remembered) return
+
+    if (!ThemeMemoryModel.needsWallpaperInstall(remembered, homeDir, themeName)) {
+      injectWallpaperIntoCarousel(remembered)
+      return
+    }
+
+    beginWallpaperInstall("ensure", remembered, "", "", 0)
+  }
+
+  function migrateRememberedWallpaperIfNeeded() {
+    const themeName = ThemeMemoryModel.safeThemeName(currentThemeName)
+    const remembered = ThemeMemoryModel.rememberedWallpaper(themeMemoryState, themeName)
+    if (!themeName || !remembered) return
+    if (!ThemeMemoryModel.needsWallpaperInstall(remembered, homeDir, themeName)) return
+    beginWallpaperInstall("migrate", remembered, "", "", 0)
+  }
+
+  function acceptInstalledWallpaper(installedPath) {
+    const installed = ThemeMemoryModel.safePath(installedPath)
+    const purpose = String(pendingInstallPurpose || "")
+    const selectionPath = pendingInstallSelectionFile
+    const donePath = pendingInstallDoneFile
+    const serial = pendingInstallSerial
+    clearPendingInstall()
+
+    if (!installed) {
+      if (purpose === "finish") cancel()
+      else if (purpose) showStatus("Wallpaper install failed")
+      return
+    }
+
+    if (purpose === "finish") {
+      rememberWallpaperSelection(installed)
+      applySerial = serial || requestSerial
+      applyProc.command = [
+        "bash",
+        "-c",
+        "printf '%s\\n' " + Util.shellQuote(installed)
+          + " > " + Util.shellQuote(selectionPath)
+          + "; : > " + Util.shellQuote(donePath)
+      ]
+      applyProc.running = true
+      return
+    }
+
+    // ensure / migrate: persist installed path and optionally retarget bg symlink
+    const themeName = ThemeMemoryModel.safeThemeName(currentThemeName)
+    if (themeName) {
+      const previous = ThemeMemoryModel.rememberedWallpaper(themeMemoryState, themeName)
+      if (previous !== installed) {
+        themeMemoryState = ThemeMemoryModel.setWallpaper(themeMemoryState, themeName, installed)
+        saveThemeMemoryState()
+        if (purpose === "migrate" || purpose === "ensure")
+          showStatus("Wallpaper saved for " + themeName)
+      }
+    }
+
+    if (purpose === "migrate" || purpose === "migrate-restore") {
+      restoringThemeMemory = true
+      memoryBgProc.command = ["omarchy-theme-bg-set", installed]
+      memoryBgProc.running = true
+      if (purpose === "migrate-restore" && themeName) {
+        themeMemoryVerifyTimer.themeName = themeName
+        themeMemoryVerifyTimer.expectedWallpaper = installed
+        themeMemoryVerifyTimer.restart()
+      }
+    }
+
+    if (localWallpaperMode)
+      injectWallpaperIntoCarousel(installed)
+  }
+
   function rememberWallpaperSelection(path) {
     if (restoringThemeMemory || !wallpaperPickerActive) return
     const themeName = String(currentThemeName || "").trim()
@@ -349,10 +512,17 @@ Item {
     if (!name) return
 
     lastRestoredThemeName = name
-    const wallpaper = ThemeMemoryModel.rememberedWallpaper(themeMemoryState, name)
+    let wallpaper = ThemeMemoryModel.rememberedWallpaper(themeMemoryState, name)
     const icons = ThemeMemoryModel.rememberedIcons(themeMemoryState, name)
 
     if (wallpaper) {
+      if (ThemeMemoryModel.needsWallpaperInstall(wallpaper, homeDir, name)) {
+        if (beginWallpaperInstall("migrate-restore", wallpaper, "", "", 0)) {
+          if (icons && icons !== currentIconTheme)
+            applyIconTheme(icons, false)
+          return
+        }
+      }
       restoringThemeMemory = true
       memoryBgProc.command = ["omarchy-theme-bg-set", wallpaper]
       memoryBgProc.running = true
@@ -424,6 +594,79 @@ Item {
     ]
     memoryBgProc.running = true
     showStatus("Wallpaper defaults restored")
+  }
+
+
+  function removeCurrentInstalledWallpaper() {
+    const themeName = ThemeMemoryModel.safeThemeName(currentThemeName)
+    const target = ThemeMemoryModel.safePath(currentPath())
+    if (!themeName || !target) return
+    if (!ThemeMemoryModel.isUserInstalledWallpaper(target, homeDir, themeName)) return
+    if (wallpaperRemoveProc.running) return
+
+    const remembered = ThemeMemoryModel.rememberedWallpaper(themeMemoryState, themeName)
+    wallpaperRemoveProc.clearMemory = remembered === target
+    wallpaperRemoveProc.removedPath = target
+    wallpaperRemoveProc.themeName = themeName
+    wallpaperRemoveProc.command = [
+      "bash",
+      "-c",
+      'target="$1"; theme="$2"; '
+      + 'theme_dir="$HOME/.config/omarchy/backgrounds/$theme"; '
+      + 'case $target in "$theme_dir"/*) ;; *) echo "Refusing to delete non-user wallpaper" >&2; exit 1 ;; esac; '
+      + 'rm -f -- "$target"; '
+      + 'link=$(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null || true); '
+      + 'if [[ $link == "$target" || ! -e $link ]]; then '
+      + 'mapfile -d "" -t bgs < <(find -L "$theme_dir/" '
+      + '"$HOME/.local/state/omarchy/current/theme/backgrounds/" -maxdepth 1 -type f '
+      + '\( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.gif" '
+      + '-o -iname "*.bmp" -o -iname "*.webp" \) -print0 2>/dev/null | sort -z); '
+      + 'if ((${#bgs[@]})); then omarchy-theme-bg-set "${bgs[0]}"; printf "%s\n" "${bgs[0]}"; '
+      + 'else printf "\n"; fi; '
+      + 'else printf "%s\n" "$link"; fi',
+      "omarchy-theme-bg-remove",
+      target,
+      themeName
+    ]
+    wallpaperRemoveProc.running = true
+  }
+
+  function acceptRemovedInstalledWallpaper(nextBackground) {
+    const removed = ThemeMemoryModel.safePath(wallpaperRemoveProc.removedPath)
+    const themeName = ThemeMemoryModel.safeThemeName(wallpaperRemoveProc.themeName)
+    const clearMemory = wallpaperRemoveProc.clearMemory === true
+    wallpaperRemoveProc.removedPath = ""
+    wallpaperRemoveProc.themeName = ""
+    wallpaperRemoveProc.clearMemory = false
+
+    if (clearMemory && themeName) {
+      themeMemoryState = ThemeMemoryModel.clearWallpaper(themeMemoryState, themeName)
+      saveThemeMemoryState()
+    }
+
+    if (removed) {
+      const nextImages = []
+      for (let index = 0; index < imageArray.length; index++) {
+        const item = imageArray[index]
+        if (!item || item.filePath === removed) continue
+        nextImages.push(item)
+      }
+      imageArray = nextImages
+      if (imageArray.length === 0) {
+        selectedIndex = 0
+        selectedImage = ""
+      } else {
+        const next = ThemeMemoryModel.safePath(nextBackground)
+        let index = next ? carouselHasWallpaper(next) : -1
+        if (index < 0) index = Math.min(selectedIndex, imageArray.length - 1)
+        if (index < 0) index = 0
+        selectedIndex = index
+        selectedImage = imageArray[index].filePath
+      }
+    }
+
+    showStatus("Wallpaper removed")
+    Qt.callLater(focusPicker)
   }
 
   function resetIconDefaults() {
@@ -843,6 +1086,25 @@ Item {
       return
     }
 
+    const themeName = ThemeMemoryModel.safeThemeName(currentThemeName)
+    const target = ThemeMemoryModel.safePath(path)
+    if (wallpaperPickerActive && themeName && target
+        && ThemeMemoryModel.needsWallpaperInstall(target, homeDir, themeName)) {
+      const activeSelectionFile = selectionFile
+      const activeDoneFile = doneFile
+      const serial = requestSerial
+      applySerial = serial
+      requestActive = false
+      selectionFile = ""
+      doneFile = ""
+      if (beginWallpaperInstall("finish", target, activeSelectionFile, activeDoneFile, serial))
+        return
+      // Fall through with the original path if install could not start.
+      selectionFile = activeSelectionFile
+      doneFile = activeDoneFile
+      requestActive = !!doneFile
+    }
+
     if (wallpaperPickerActive) rememberWallpaperSelection(path)
 
     const activeSelectionFile = selectionFile
@@ -924,6 +1186,9 @@ Item {
     root.selectedIndex = root.indexForSelectedImage(newImages)
     root.imageArray = newImages
     root.imagesLoaded = true
+
+    if (localWallpaperMode)
+      ensureRememberedWallpaperInPicker()
 
     if (reveal !== false) {
       root.opened = true
@@ -1269,6 +1534,44 @@ Item {
     onExited: function(exitCode) {
       if (exitCode !== 0 && root.iconsMode)
         root.showStatus("Icon inventory failed")
+    }
+  }
+
+  Process {
+    id: wallpaperRemoveProc
+    property bool clearMemory: false
+    property string removedPath: ""
+    property string themeName: ""
+    property string stdoutText: ""
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.wallpaperRemoveProc.stdoutText = String(text || "").trim()
+    }
+    onExited: function(exitCode) {
+      if (exitCode === 0) {
+        root.acceptRemovedInstalledWallpaper(root.wallpaperRemoveProc.stdoutText)
+        return
+      }
+      root.wallpaperRemoveProc.removedPath = ""
+      root.wallpaperRemoveProc.themeName = ""
+      root.wallpaperRemoveProc.clearMemory = false
+      root.wallpaperRemoveProc.stdoutText = ""
+      root.showStatus("Wallpaper remove failed")
+    }
+  }
+
+  Process {
+    id: wallpaperInstallProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.acceptInstalledWallpaper(String(text || "").trim())
+    }
+    onExited: function(exitCode) {
+      if (exitCode === 0) return
+      const purpose = String(root.pendingInstallPurpose || "")
+      root.clearPendingInstall()
+      if (purpose === "finish") root.cancel()
+      else if (purpose) root.showStatus("Wallpaper install failed")
     }
   }
 
@@ -1810,19 +2113,35 @@ Item {
           uninstallButton.implicitHeight,
           catalogInstallButton.implicitHeight
         )
-        readonly property real sideWidth: Math.max(
+        readonly property real leftReserved: Math.max(
           favoriteControls.visible ? favoriteControls.implicitWidth : 0,
-          defaultsControls.visible ? defaultsControls.implicitWidth : 0,
-          wallhavenBrowseButton.visible && selectedLabel.visible ? wallhavenBrowseButton.implicitWidth : 0,
-          wallhavenBackButton.visible ? wallhavenBackButton.implicitWidth : 0,
-          iconsBrowseButton.visible ? iconsBrowseButton.implicitWidth : 0,
-          iconsBackButton.visible ? iconsBackButton.implicitWidth : 0,
-          loadMoreButton.visible ? loadMoreButton.implicitWidth : 0,
           themeBrowseButton.visible ? themeBrowseButton.implicitWidth : 0,
           catalogBackButton.visible ? catalogBackButton.implicitWidth : 0,
-          uninstallButton.visible ? uninstallButton.implicitWidth : 0,
-          catalogInstallButton.visible ? catalogInstallButton.implicitWidth : 0
+          wallhavenBackButton.visible ? wallhavenBackButton.implicitWidth : 0,
+          iconsBackButton.visible ? iconsBackButton.implicitWidth : 0
         )
+        readonly property real rightReserved: {
+          let width = 0
+          if (wallhavenBrowseButton.visible) width += wallhavenBrowseButton.implicitWidth
+          if (iconsBrowseButton.visible) {
+            if (width > 0) width += Style.space(8)
+            width += iconsBrowseButton.implicitWidth
+          }
+          if (uninstallButton.visible) {
+            let cluster = uninstallButton.implicitWidth
+            // Icons sit to the left of Uninstall in theme-picker mode.
+            if (iconsBrowseButton.visible && !wallhavenBrowseButton.visible)
+              cluster += Style.space(8) + iconsBrowseButton.implicitWidth
+            width = Math.max(width, cluster)
+          }
+          if (defaultsControls.visible)
+            width = Math.max(width, defaultsControls.implicitWidth)
+          if (loadMoreButton.visible)
+            width = Math.max(width, loadMoreButton.implicitWidth)
+          if (catalogInstallButton.visible)
+            width = Math.max(width, catalogInstallButton.implicitWidth)
+          return width
+        }
 
         Row {
           id: favoriteControls
@@ -1871,6 +2190,19 @@ Item {
             verticalPadding: Style.space(7)
             onClicked: root.resetWallpaperDefaults()
           }
+
+          Button {
+            anchors.verticalCenter: parent.verticalCenter
+            visible: root.canRemoveInstalledWallpaper
+            text: "Remove"
+            tooltipText: "Delete this installed wallpaper from the theme backgrounds folder"
+            foreground: Color.urgent
+            accent: Color.urgent
+            bordered: true
+            horizontalPadding: Style.space(10)
+            verticalPadding: Style.space(7)
+            onClicked: root.removeCurrentInstalledWallpaper()
+          }
         }
 
         Row {
@@ -1897,10 +2229,11 @@ Item {
         Text {
           id: selectedLabel
           visible: root.showLabels || root.wallhavenMode || root.wallpaperPickerActive || root.iconsMode
-          anchors.centerIn: parent
-          width: footer.sideWidth > 0
-            ? parent.width - 2 * (footer.sideWidth + Style.space(16))
-            : parent.width
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.leftMargin: footer.leftReserved > 0 ? footer.leftReserved + Style.space(16) : 0
+          anchors.rightMargin: footer.rightReserved > 0 ? footer.rightReserved + Style.space(16) : 0
+          anchors.verticalCenter: parent.verticalCenter
           text: root.currentLabel()
           color: root.foreground
           style: Text.Outline
@@ -1908,7 +2241,7 @@ Item {
           font.pixelSize: root.wallhavenMode ? Style.font.title : Style.font.display
           font.weight: Font.DemiBold
           horizontalAlignment: Text.AlignHCenter
-          elide: Text.ElideRight
+          elide: Text.ElideMiddle
           textFormat: Text.PlainText
         }
 

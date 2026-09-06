@@ -151,6 +151,77 @@ const rememberedIconsDefault = (state, themeName) => {
 const hasWallpaperOverride = (state, themeName) => !!rememberedWallpaper(state, themeName)
 const hasIconsOverride = (state, themeName) => !!rememberedIcons(state, themeName)
 
+
+const imageBasename = (path) => {
+  const target = safePath(path)
+  if (!target) return ""
+  const base = target.split("/").pop() || ""
+  if (!base || base === "." || base === ".." || base.includes("/") || base.includes("\0")) return ""
+  return base
+}
+
+const homePath = (home) => {
+  const value = safePath(home)
+  return value || ""
+}
+
+const themeBackgroundsDir = (home, themeName) => {
+  const root = homePath(home)
+  const name = safeThemeName(themeName)
+  if (!root || !name) return ""
+  return root + "/.config/omarchy/backgrounds/" + name
+}
+
+const currentThemeBackgroundsDir = (home) => {
+  const root = homePath(home)
+  if (!root) return ""
+  return root + "/.local/state/omarchy/current/theme/backgrounds"
+}
+
+const aetherWallpapersDir = (home) => {
+  const root = homePath(home)
+  if (!root) return ""
+  return root + "/.local/share/aether/wallpapers"
+}
+
+const isUnderDir = (path, dir) => {
+  const target = safePath(path)
+  const root = safePath(dir)
+  if (!target || !root) return false
+  return target === root || target.startsWith(root + "/")
+}
+
+const isPickerWallpaperPath = (path, home, themeName) =>
+  isUnderDir(path, themeBackgroundsDir(home, themeName)) ||
+  isUnderDir(path, currentThemeBackgroundsDir(home))
+
+const isAetherWallpaperPath = (path, home) => isUnderDir(path, aetherWallpapersDir(home))
+
+const installedWallpaperPath = (path, home, themeName) => {
+  const target = safePath(path)
+  const dir = themeBackgroundsDir(home, themeName)
+  const base = imageBasename(target)
+  if (!target || !dir || !base) return ""
+  return dir + "/" + base
+}
+
+
+const isUserInstalledWallpaper = (path, home, themeName) => {
+  const target = safePath(path)
+  const dir = themeBackgroundsDir(home, themeName)
+  if (!target || !dir) return false
+  if (!isUnderDir(target, dir)) return false
+  const base = imageBasename(target)
+  return !!base
+}
+
+const needsWallpaperInstall = (path, home, themeName) => {
+  const target = safePath(path)
+  const name = safeThemeName(themeName)
+  if (!target || !name || !homePath(home)) return false
+  return !isPickerWallpaperPath(target, home, themeName)
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     stateVersion,
@@ -169,6 +240,15 @@ if (typeof module !== "undefined") {
     rememberedIcons,
     rememberedIconsDefault,
     hasWallpaperOverride,
-    hasIconsOverride
+    hasIconsOverride,
+    imageBasename,
+    themeBackgroundsDir,
+    currentThemeBackgroundsDir,
+    aetherWallpapersDir,
+    isPickerWallpaperPath,
+    isAetherWallpaperPath,
+    installedWallpaperPath,
+    isUserInstalledWallpaper,
+    needsWallpaperInstall
   }
 }

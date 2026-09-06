@@ -118,3 +118,25 @@ test("ships theme-set memory hook and Icons showcase chip", async () => {
   assert.doesNotMatch(picker, /id: iconsBrowseButton[\s\S]*?text: "Icons"/)
 })
 
+test("installs external wallpapers into theme backgrounds for the local picker", async () => {
+  const manifest = JSON.parse(await read("manifest.json"))
+  const runtimeDir = dirname(manifest.entryPoints.overlay)
+  const picker = await read(join(runtimeDir, "ImagePicker.qml"))
+  const memoryModel = await read(join(runtimeDir, "ThemeMemoryModel.js"))
+  const installer = await read("install-wallpaper.sh")
+
+  assert.match(memoryModel, /needsWallpaperInstall/)
+  assert.match(memoryModel, /installedWallpaperPath/)
+  assert.match(picker, /install-wallpaper\.sh/)
+  assert.match(picker, /beginWallpaperInstall/)
+  assert.match(picker, /ensureRememberedWallpaperInPicker/)
+  assert.match(picker, /acceptInstalledWallpaper/)
+  assert.match(picker, /canRemoveInstalledWallpaper/)
+  assert.match(picker, /removeCurrentInstalledWallpaper/)
+  assert.match(picker, /leftReserved/)
+  assert.match(picker, /rightReserved/)
+  assert.match(memoryModel, /isUserInstalledWallpaper/)
+  assert.match(installer, /\.config\/omarchy\/backgrounds/)
+  assert.match(installer, /realpath -e/)
+})
+

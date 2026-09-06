@@ -2,6 +2,9 @@
 
 ## 0.5.0 - 2026-09-06
 
+- Install Wallhaven/external wallpaper picks into `~/.config/omarchy/backgrounds/<theme>/` so they appear in the local wallpaper picker carousel.
+- Add a stylish **Remove** control for user-installed theme backgrounds (deletes the file, updates memory/carousel, and retargets the current background when needed).
+- Reserve independent left/right footer space so the selected wallpaper title no longer overlaps Save/Reset or Browse Wallhaven/Icons.
 - Remember per-theme wallpaper and icon overrides in
   `~/.config/omarchy/theme-manager-memory.json`, restoring them after theme
   switches (including native `omarchy-theme-set`) once theme-set finishes.

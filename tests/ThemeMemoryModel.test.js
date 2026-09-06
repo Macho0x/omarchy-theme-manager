@@ -85,3 +85,39 @@ test("drops empty theme entries after clearing all overrides", () => {
   state = ThemeMemoryModel.clearWallpaper(state, "solitude")
   assert.deepEqual(state.themes, {})
 })
+
+test("detects picker vs external wallpaper paths and install targets", () => {
+  const home = "/home/mtolhuijs"
+  const aether = home + "/.local/share/aether/wallpapers/wallhaven-21zz2g.png"
+  const installed = home + "/.config/omarchy/backgrounds/vantablack/wallhaven-21zz2g.png"
+  const themeBg = home + "/.local/state/omarchy/current/theme/backgrounds/omarchy.webp"
+
+  assert.equal(ThemeMemoryModel.imageBasename(aether), "wallhaven-21zz2g.png")
+  assert.equal(
+    ThemeMemoryModel.themeBackgroundsDir(home, "vantablack"),
+    home + "/.config/omarchy/backgrounds/vantablack"
+  )
+  assert.equal(ThemeMemoryModel.needsWallpaperInstall(aether, home, "vantablack"), true)
+  assert.equal(ThemeMemoryModel.needsWallpaperInstall(installed, home, "vantablack"), false)
+  assert.equal(ThemeMemoryModel.needsWallpaperInstall(themeBg, home, "vantablack"), false)
+  assert.equal(ThemeMemoryModel.isAetherWallpaperPath(aether, home), true)
+  assert.equal(ThemeMemoryModel.isPickerWallpaperPath(aether, home, "vantablack"), false)
+  assert.equal(
+    ThemeMemoryModel.installedWallpaperPath(aether, home, "vantablack"),
+    installed
+  )
+  assert.equal(ThemeMemoryModel.needsWallpaperInstall(aether, home, "../evil"), false)
+  assert.equal(ThemeMemoryModel.themeBackgroundsDir(home, "bad/name"), "")
+})
+
+test("recognizes user-installed theme background files only", () => {
+  const home = "/home/mtolhuijs"
+  const installed = home + "/.config/omarchy/backgrounds/vantablack/wallhaven-21zz2g.png"
+  const stock = home + "/.local/state/omarchy/current/theme/backgrounds/omarchy.webp"
+  const aether = home + "/.local/share/aether/wallpapers/wallhaven-21zz2g.png"
+  assert.equal(ThemeMemoryModel.isUserInstalledWallpaper(installed, home, "vantablack"), true)
+  assert.equal(ThemeMemoryModel.isUserInstalledWallpaper(stock, home, "vantablack"), false)
+  assert.equal(ThemeMemoryModel.isUserInstalledWallpaper(aether, home, "vantablack"), false)
+  assert.equal(ThemeMemoryModel.isUserInstalledWallpaper(installed, home, "other"), false)
+})
+
