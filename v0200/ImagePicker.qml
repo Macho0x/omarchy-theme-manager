@@ -18,7 +18,7 @@ import "WallpaperCommandModel.js" as WallpaperCommandModel
 Item {
   id: root
 
-  readonly property string buildIdentity: "0.5.9"
+  readonly property string buildIdentity: "0.5.10"
   // Injected by omarchy-shell; defaults to the session OMARCHY_PATH.
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property var manifest: null
@@ -192,12 +192,25 @@ Item {
 
   Component.onCompleted: {
     console.info("Theme Manager runtime " + buildIdentity)
+    // Shell injects `manifest` in Loader.onLoaded after this; real boot warm-up
+    // runs from onManifestChanged. Call anyway if binding order changes.
     ensureThemeSetMemoryHook()
-    ensureFooterIconsInventory()
+    ensureFooterIconsReady()
+  }
+
+  onManifestChanged: {
+    if (!manifest) return
+    ensureThemeSetMemoryHook()
+    ensureFooterIconsReady()
   }
 
   onCurrentIconThemeChanged: updateFooterIconPreviews()
   onFooterPreviewIconThemeChanged: updateFooterIconPreviews()
+  onCurrentThemeNameChanged: {
+    // Memory / theme name may arrive after inventory; re-resolve once ready.
+    if (!String(currentIconTheme || "").trim())
+      ensureCurrentIconTheme()
+  }
 
   function runtimeIdentity() {
     return buildIdentity
@@ -229,6 +242,9 @@ Item {
       hasWallpaperMemory: hasWallpaperMemory,
       hasIconsMemory: hasIconsMemory,
       currentIconTheme: currentIconTheme,
+      footerPreviewIconTheme: footerPreviewIconTheme,
+      footerIconHasPreviews: footerIconHasPreviews,
+      iconsInventoryCount: Array.isArray(iconsInventoryThemes) ? iconsInventoryThemes.length : 0,
       images: imageArray.length,
       query: wallhavenMode ? filterText : "",
       filtersOpen: filterSheet.opened || catalogFilterSheet.opened,
@@ -554,8 +570,45 @@ Item {
     hookInstallProc.running = true
   }
 
+  function ensureFooterIconsReady() {
+    ensureCurrentIconTheme()
+    ensureFooterIconsInventory()
+  }
+
+  function ensureCurrentIconTheme() {
+    if (String(currentIconTheme || "").trim()) return
+
+    const remembered = ThemeMemoryModel.rememberedIcons(themeMemoryState, currentThemeName)
+    if (remembered) {
+      currentIconTheme = remembered
+      return
+    }
+
+    if (iconThemeProbeProc.running) return
+    iconThemeProbeProc.command = [
+      "gsettings",
+      "get",
+      "org.gnome.desktop.interface",
+      "icon-theme"
+    ]
+    iconThemeProbeProc.running = true
+  }
+
+  function acceptIconThemeProbe(text) {
+    if (String(currentIconTheme || "").trim()) return
+    let value = String(text || "").trim()
+    if ((value.startsWith("'") && value.endsWith("'"))
+        || (value.startsWith("\"") && value.endsWith("\"")))
+      value = value.slice(1, -1)
+    value = ThemeMemoryModel.safeIconName(value)
+    if (value)
+      currentIconTheme = value
+  }
+
   function ensureFooterIconsInventory() {
     if (footerIconsInventoryProc.running) return
+    if (Array.isArray(iconsInventoryThemes) && iconsInventoryThemes.length > 0)
+      return
     const script = pluginScriptPath("icons-inventory.sh")
     if (!script) return
     footerIconsInventoryProc.command = [script]
@@ -1468,6 +1521,8 @@ Item {
   }
 
   function openSelector(nextImageDirs, nextImageRows, nextSelectedImage, nextSelectionFile, nextDoneFile, nextShowLabels, nextFilterable) {
+    // Warm Icons chip before first paint (inventory needs manifest.__sourceDir).
+    ensureFooterIconsReady()
     if (catalogMode) leaveCatalog(false)
     if (wallhavenMode) leaveWallhaven(false)
     if (iconsMode) leaveIcons(false)
@@ -1649,8 +1704,15 @@ Item {
     path: root.currentIconsThemePath
     watchChanges: true
     printErrors: false
-    onLoaded: root.currentIconTheme = String(text() || "").trim().slice(0, 255)
-    onLoadFailed: root.currentIconTheme = ""
+    onLoaded: {
+      const value = String(text() || "").trim().slice(0, 255)
+      if (value) {
+        root.currentIconTheme = value
+      } else {
+        root.ensureCurrentIconTheme()
+      }
+    }
+    onLoadFailed: root.ensureCurrentIconTheme()
     onFileChanged: reload()
   }
 
@@ -1791,6 +1853,14 @@ Item {
 
   Process {
     id: hookInstallProc
+  }
+
+  Process {
+    id: iconThemeProbeProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.acceptIconThemeProbe(String(text || ""))
+    }
   }
 
   Process {

@@ -104,7 +104,8 @@ Open the regular Omarchy theme switcher.
 
 - Footer: **Wallpapers** on the left; **Browse themes** + Icons on the right.
 - The Icons chip previews the highlighted theme’s icons (sticky memory or
-  package default), not only the currently applied set.
+  package default), not only the currently applied set. Previews warm on
+  shell start / picker open so the chip is not plain **Icons** after restart.
 - Choose **Browse themes** or press `Ctrl+B` (bare `B` when search is inactive).
 - Jump to wallpapers with **Wallpapers** / `Ctrl+W`.
 - Type to search, use the arrow keys to navigate, and press `Enter` to install.

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.10 - 2026-09-06
+
+- Fix Icons chip cold-start: after shell restart the footer showed plain
+  **Icons** until an icon set was picked. Inventory previously ran in
+  `Component.onCompleted` before the shell injected `manifest`, so
+  `pluginScriptPath("icons-inventory.sh")` was empty and previews never
+  warmed. Resolve the current icon theme early (`icons.theme`, sticky memory,
+  then `gsettings`), run inventory once `manifest` is available and again on
+  picker open, and populate the 3-preview showcase before first paint.
+
 ## 0.5.9 - 2026-09-06
 
 - Footer layout: move **Browse themes** / **Browse Wallhaven** to the right,
