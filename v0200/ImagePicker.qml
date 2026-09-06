@@ -1675,6 +1675,7 @@ Item {
           spacing: Style.space(8)
 
           Button {
+            anchors.verticalCenter: parent.verticalCenter
             text: root.currentFavorite ? "★ Saved" : "☆ Save"
             tooltipText: "Toggle favorite (Ctrl+D)"
             foreground: root.currentFavorite ? root.livePaletteAccent : root.foreground
@@ -1686,6 +1687,7 @@ Item {
           }
 
           Button {
+            anchors.verticalCenter: parent.verticalCenter
             enabled: root.favoriteIds.length > 0
             text: root.favoritesOnly ? "★ Favorites" : "All"
             tooltipText: "Show only favorites (Ctrl+Shift+D)"
@@ -1696,20 +1698,10 @@ Item {
             verticalPadding: Style.space(7)
             onClicked: root.toggleFavoritesOnly()
           }
-        }
-
-        Row {
-          id: defaultsControls
-          visible: (root.localWallpaperMode || root.iconsMode) && !!root.currentThemeName
-          anchors.verticalCenter: parent.verticalCenter
-          // Keep a single edge binding so QML does not retain a stale left/right anchor.
-          x: root.iconsMode
-            ? parent.width - width
-            : (favoriteControls.visible ? favoriteControls.width + Style.space(8) : 0)
-          spacing: Style.space(8)
 
           Button {
-            visible: root.localWallpaperMode
+            anchors.verticalCenter: parent.verticalCenter
+            visible: !!root.currentThemeName
             enabled: root.hasWallpaperMemory
             text: "Reset wallpaper"
             tooltipText: root.hasWallpaperMemory
@@ -1722,9 +1714,17 @@ Item {
             verticalPadding: Style.space(7)
             onClicked: root.resetWallpaperDefaults()
           }
+        }
+
+        Row {
+          id: defaultsControls
+          visible: root.iconsMode && !!root.currentThemeName
+          anchors.right: parent.right
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(8)
 
           Button {
-            visible: root.iconsMode
+            anchors.verticalCenter: parent.verticalCenter
             enabled: root.hasIconsMemory || !!root.currentIconTheme
             text: "Icon defaults"
             tooltipText: "Clear remembered icons and restore this theme package default"
