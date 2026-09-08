@@ -12,7 +12,7 @@ https://github.com/mtolhuys/omarchy-theme-manager
 
 ### Target commit
 
-0a64410c4b68b44120101f261cdd77be8a7f0d27
+141e1bb689f833d81db68ebad4dce873927dc856
 
 ### Verification acknowledgment
 
@@ -23,6 +23,6 @@ https://github.com/mtolhuys/omarchy-theme-manager
 Maintainer notes (not required by form):
 
 - Category already Appearance; tag quickshell
-- Publishing 0.5.10: sticky per-theme wallpaper/icons memory, catalog filters + fuzzy search, Themes⇄Wallpapers cross-nav, Icons showcase, Wallhaven via Aether, Actions menu
+- Publishing 0.5.11: emergency lifecycle hotfix preventing image-selector launcher leaks during local plugin reloads
 - Marketing banner rebuilt from disposable Plugin Lab Matte Black captures (not daily host)
 - Caption polish: quiet secondary-only top-center lines (middots; no ALL-CAPS / no ACTIONS label)
