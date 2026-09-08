@@ -9,11 +9,19 @@ const read = (path) => readFile(join(process.cwd(), path), "utf8")
 test("keeps the published Theme Manager identity as the sole picker clone", async () => {
   const manifest = JSON.parse(await read("manifest.json"))
   assert.equal(manifest.id, "io.github.mtolhuys.theme-manager")
-  assert.equal(manifest.version, "0.5.10")
+  assert.equal(manifest.version, "0.5.11")
   assert.deepEqual(manifest.kinds, ["overlay"])
   assert.match(manifest.entryPoints.overlay, /^v[0-9]{4}\/ImagePicker\.qml$/)
   assert.equal(manifest.omarchy.clonedFrom, "omarchy.image-picker")
   assert.equal(manifest.keepLoaded, true)
+})
+
+test("releases image-selector clients independently of QML loader teardown", async () => {
+  const manifest = JSON.parse(await read("manifest.json"))
+  const picker = await read(manifest.entryPoints.overlay)
+
+  assert.match(picker, /Quickshell\.execDetached\(\["touch", "--", String\(path\)\]\)/)
+  assert.doesNotMatch(picker, /doneFilesToRelease|releaseNextDoneFile|id: releaseProc/)
 })
 
 test("versions the complete QML and JavaScript runtime graph", async () => {
@@ -205,4 +213,3 @@ test("installs external wallpapers into theme backgrounds for the local picker",
   assert.match(await read("list.sh"), /4096/)
   assert.match(await read("install-wallpaper.sh"), /too small/)
 })
-

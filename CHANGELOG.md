@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.11 - 2026-09-08
+
+- Fix image-selector launchers surviving a local plugin reload. Completion now
+  uses a detached process, so destroying the QML loader cannot cancel the done
+  marker that releases `omarchy-menu-images`.
+- Add a real Plugin Lab regression that opens the theme shortcut, reloads the
+  plugin, and asserts that the original launcher PID exits.
+
 ## 0.5.10 - 2026-09-06
 
 - Fix Icons chip cold-start: after shell restart the footer showed plain
@@ -75,7 +83,6 @@
 - Fix still-stale **Remove** tiles: clear the carousel model and force a
   `list.sh` rescan of `imageDirs` after delete/reset so ghosts vanish immediately
   without closing the picker (in-memory Repeater surgery was not enough).
-
 
 ## 0.5.2 - 2026-09-06
 

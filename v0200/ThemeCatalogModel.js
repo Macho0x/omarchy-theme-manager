@@ -193,7 +193,9 @@ const normalizeCatalogFilters = (filters) => {
 
 const catalogFilterKey = (filters) => {
   const normalized = normalizeCatalogFilters(filters)
-  return [normalized.listing, normalized.availability, normalized.sort, normalized.minStars].join("|")
+  return [normalized.listing, normalized.availability, normalized.sort, normalized.minStars].join(
+    "|"
+  )
 }
 
 const catalogFiltersActive = (filters) =>
