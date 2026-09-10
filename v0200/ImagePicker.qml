@@ -269,9 +269,22 @@ Item {
     return omarchyPath + "/shell/plugins/image-picker/" + name
   }
 
+  function localPath(url) {
+    var value = String(url || "")
+    if (value.indexOf("file://") === 0) value = value.substring(7)
+    try {
+      return decodeURIComponent(value)
+    } catch (e) {
+      return value
+    }
+  }
+
   function pluginScriptPath(name) {
-    const sourceDir = manifest && manifest.__sourceDir ? String(manifest.__sourceDir) : ""
-    return sourceDir ? sourceDir.replace(/\/$/, "") + "/" + name : ""
+    // Third-party manifests do not expose the host's private source directory
+    // (Omarchy 4.0.3 sanitizes it), so resolve from this file, which lives one
+    // level under the plugin root (v0200/).
+    const dir = localPath(Qt.resolvedUrl("../")).replace(/\/$/, "")
+    return dir ? dir + "/" + name : ""
   }
 
   function focusPicker() {

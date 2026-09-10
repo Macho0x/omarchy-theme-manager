@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.12 - 2026-09-10
+
+- Omarchy 4.0.3 compatibility: resolve the plugin's helper scripts
+  (install-wallpaper.sh, icons-inventory.sh, reset-wallpaper.sh, and the
+  theme-set hook) from the plugin's own file location instead of the host's
+  private `__sourceDir` manifest field, which third-party manifests no longer
+  carry. Wallpaper install/reset and the icon inventory run again.
+
 ## 0.5.11 - 2026-09-08
 
 - Fix image-selector launchers surviving a local plugin reload. Completion now
