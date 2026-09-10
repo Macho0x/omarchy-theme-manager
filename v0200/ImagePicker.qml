@@ -18,7 +18,7 @@ import "WallpaperCommandModel.js" as WallpaperCommandModel
 Item {
   id: root
 
-  readonly property string buildIdentity: "0.5.11"
+  readonly property string buildIdentity: "0.5.12"
   // Injected by omarchy-shell; defaults to the session OMARCHY_PATH.
   property string omarchyPath: Quickshell.env("OMARCHY_PATH")
   property var manifest: null
@@ -1527,7 +1527,7 @@ Item {
   }
 
   function openSelector(nextImageDirs, nextImageRows, nextSelectedImage, nextSelectionFile, nextDoneFile, nextShowLabels, nextFilterable) {
-    // Warm Icons chip before first paint (inventory needs manifest.__sourceDir).
+    // Warm the Icons chip before first paint.
     ensureFooterIconsReady()
     if (catalogMode) leaveCatalog(false)
     if (wallhavenMode) leaveWallhaven(false)
