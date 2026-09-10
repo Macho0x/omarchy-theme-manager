@@ -155,10 +155,14 @@ omarchy_host_test() {
   capture_console "success-theme-manager-07-filtered" || return 1
 
   press ret || return 1
-  wait_for_guest_state "the selected full wallpaper is downloaded and applied" 55 ssh_session \
-    "background=\$(readlink -f \"\$HOME/.local/state/omarchy/current/background\") && \
-     [[ \$background == \"\$HOME/.local/share/aether/wallpapers/\"* ]] && \
+  wait_for_guest_state "the selected full wallpaper is installed into the current theme and applied" 55 ssh_session \
+    "theme=\$(cat \"\$HOME/.local/state/omarchy/current/theme.name\") && \
+     background=\$(readlink -f \"\$HOME/.local/state/omarchy/current/background\") && \
+     [[ \$background == \"\$HOME/.config/omarchy/backgrounds/\$theme/\"* ]] && \
      file --brief --mime-type \"\$background\" | grep -q '^image/' && \
+     jq -e --arg theme \"\$theme\" --arg background \"\$background\" \
+       '.themes[\$theme].wallpaper == \$background' \
+       \"\$HOME/.config/omarchy/theme-manager-memory.json\" && \
      hyprctl -j layers | jq -e \
        '[.. | objects | select(.namespace? == \"omarchy-image-selector\")] | length == 0'" || return 1
   ssh_session "test -z \"\$(hyprctl configerrors)\"" || return 1
